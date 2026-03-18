@@ -6,10 +6,18 @@ Votes should be counted with a geometric scoring system, if a vote is someone's 
 
 This repository now includes a real cross-device version of the app backed by SQLite.
 
+Railway deployment:
+1. Push this repo to GitHub
+2. In Railway, create a new project from the repo
+3. Add a volume and mount it at `/data`
+4. Set environment variable `DND_VOTE_DATA_DIR=/data`
+5. Deploy the service
+6. Generate a Railway public domain for the service and share that URL
+
 Run locally:
-1. Start the server with `python server.py --host 0.0.0.0 --port 8000`
+1. Start the server with `python main.py`
 2. Open `http://localhost:8000` on the host machine
-3. Share `http://YOUR-LAN-IP:8000` links with your friends so they can vote from their own devices
+3. Create polls from the host page and share the generated vote link
 
 Pages:
 - `/` or `/index.html` is the host page for creating polls
@@ -18,5 +26,6 @@ Pages:
 
 Notes:
 - Polls and votes are stored in `data/dnd_vote.db`
+- On Railway, the SQLite file should live on the mounted volume via `DND_VOTE_DATA_DIR=/data`
 - Votes from the same voter name replace that voter's previous ballot for the same poll
 - Any date marked unavailable by any voter is disqualified from scoring

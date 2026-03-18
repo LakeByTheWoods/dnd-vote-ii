@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sqlite3
 from datetime import datetime, timezone
 from http import HTTPStatus
@@ -12,7 +13,7 @@ from uuid import uuid4
 
 
 ROOT = Path(__file__).resolve().parent
-DATA_DIR = ROOT / "data"
+DATA_DIR = Path(os.environ.get("DND_VOTE_DATA_DIR", ROOT / "data")).resolve()
 DB_PATH = DATA_DIR / "dnd_vote.db"
 SCORE_RATIO = 2 / 3
 STATIC_FILES = {
@@ -451,8 +452,17 @@ class AppHandler(BaseHTTPRequestHandler):
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run the D&D date voting app.")
-    parser.add_argument("--host", default="127.0.0.1", help="Host interface to bind.")
-    parser.add_argument("--port", default=8000, type=int, help="Port to serve on.")
+    parser.add_argument(
+        "--host",
+        default=os.environ.get("HOST", "0.0.0.0"),
+        help="Host interface to bind.",
+    )
+    parser.add_argument(
+        "--port",
+        default=int(os.environ.get("PORT", "8000")),
+        type=int,
+        help="Port to serve on.",
+    )
     args = parser.parse_args()
 
     initialize_database()
