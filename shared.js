@@ -66,7 +66,11 @@
 
   function buildPageLink(fileName, pollId) {
     const url = new URL(window.location.href);
-    url.pathname = url.pathname.replace(/[^/]+$/, fileName);
+    if (url.pathname === "/" || url.pathname === "") {
+      url.pathname = `/${fileName}`;
+    } else {
+      url.pathname = url.pathname.replace(/[^/]+$/, fileName);
+    }
     url.search = `?poll=${encodeURIComponent(pollId)}`;
     url.hash = "";
     return url.toString();
