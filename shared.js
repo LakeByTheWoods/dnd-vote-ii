@@ -1,127 +1,53 @@
 (function attachAppApi() {
-  const STORAGE_KEY = "dnd-date-vote-polls";
-  const SCORE_RATIO = 2 / 3;
-
-  function loadPolls() {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) {
-      return {};
-    }
-
-    try {
-      const parsed = JSON.parse(raw);
-      return parsed && typeof parsed === "object" ? parsed : {};
-    } catch {
-      localStorage.removeItem(STORAGE_KEY);
-      return {};
-    }
-  }
-
-  function savePolls(polls) {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(polls));
-  }
-
-  function createPoll(title, dateValues) {
-    const id = crypto.randomUUID();
-    const poll = {
-      id,
-      title,
-      createdAt: new Date().toISOString(),
-      dates: dateValues.map((value) => ({
-        id: crypto.randomUUID(),
-        value,
-      })),
-      votes: [],
-    };
-
-    const polls = loadPolls();
-    polls[id] = poll;
-    savePolls(polls);
-    return poll;
-  }
-
-  function getPoll(pollId) {
-    const polls = loadPolls();
-    return polls[pollId] ?? null;
-  }
-
-  function getAllPolls() {
-    return Object.values(loadPolls()).sort((left, right) =>
-      right.createdAt.localeCompare(left.createdAt)
-    );
-  }
-
-  function clearPolls() {
-    localStorage.removeItem(STORAGE_KEY);
-  }
-
-  function saveVote(pollId, vote) {
-    const polls = loadPolls();
-    const poll = polls[pollId];
-    if (!poll) {
-      return null;
-    }
-
-    const normalizedName = vote.voterName.trim().toLowerCase();
-    const index = poll.votes.findIndex(
-      (existingVote) => existingVote.voterName.trim().toLowerCase() === normalizedName
-    );
-
-    if (index >= 0) {
-      poll.votes.splice(index, 1, vote);
-    } else {
-      poll.votes.push(vote);
-    }
-
-    polls[pollId] = poll;
-    savePolls(polls);
-    return poll;
-  }
-
-  function tallyResults(poll) {
-    const dates = poll.dates.map((date) => ({
-      ...date,
-      label: formatDate(date.value),
-      score: 0,
-      unavailableBy: [],
-      disqualified: false,
-    }));
-    const byId = new Map(dates.map((date) => [date.id, date]));
-
-    poll.votes.forEach((vote) => {
-      vote.unavailableDateIds.forEach((dateId) => {
-        const result = byId.get(dateId);
-        if (!result) {
-          return;
-        }
-
-        result.disqualified = true;
-        if (!result.unavailableBy.includes(vote.voterName)) {
-          result.unavailableBy.push(vote.voterName);
-        }
-      });
+  async function apiRequest(path, options = {}) {
+    const response = await window.fetch(path, {
+      headers: {
+        "Content-Type": "application/json",
+        ...(options.headers ?? {}),
+      },
+      ...options,
     });
 
-    poll.votes.forEach((vote) => {
-      vote.rankings.forEach((ranking, index) => {
-        const result = byId.get(ranking.dateId);
-        if (!result || result.disqualified) {
-          return;
-        }
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(data.error || "Request failed.");
+    }
 
-        result.score += SCORE_RATIO ** index;
-      });
-    });
+    return data;
+  }
 
-    return dates.sort((left, right) => {
-      if (left.disqualified !== right.disqualified) {
-        return left.disqualified ? 1 : -1;
-      }
-      if (right.score !== left.score) {
-        return right.score - left.score;
-      }
-      return left.value.localeCompare(right.value);
+  async function createPoll(title, dateValues) {
+    const data = await apiRequest("/api/polls", {
+      method: "POST",
+      body: JSON.stringify({ title, dates: dateValues }),
     });
+    return data.poll;
+  }
+
+  async function getPoll(pollId) {
+    const data = await apiRequest(`/api/polls/${encodeURIComponent(pollId)}`);
+    return data.poll;
+  }
+
+  async function getAllPolls() {
+    const data = await apiRequest("/api/polls");
+    return data.polls;
+  }
+
+  async function clearPolls() {
+    await apiRequest("/api/polls", { method: "DELETE" });
+  }
+
+  async function saveVote(pollId, vote) {
+    const data = await apiRequest(`/api/polls/${encodeURIComponent(pollId)}/votes`, {
+      method: "POST",
+      body: JSON.stringify(vote),
+    });
+    return data.poll;
+  }
+
+  async function getResults(pollId) {
+    return apiRequest(`/api/polls/${encodeURIComponent(pollId)}/results`);
   }
 
   function formatDate(value) {
@@ -147,14 +73,15 @@
   }
 
   window.DndVoteApp = {
+    apiRequest,
     clearPolls,
     createPoll,
     formatDate,
     getAllPolls,
     getPoll,
     getPollIdFromLocation,
+    getResults,
     buildPageLink,
     saveVote,
-    tallyResults,
   };
 })();

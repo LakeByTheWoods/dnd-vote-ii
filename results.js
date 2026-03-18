@@ -11,31 +11,40 @@ const resultsElements = {
 };
 
 const resultsPollId = resultsApi.getPollIdFromLocation();
-const resultsPoll = resultsPollId ? resultsApi.getPoll(resultsPollId) : null;
+let resultsPoll = null;
 
-initializeResultsPage();
+void initializeResultsPage();
 
-function initializeResultsPage() {
-  if (!resultsPoll) {
-    resultsElements.missing.classList.remove("hidden");
-    resultsElements.missing.textContent =
-      "This poll link is missing or does not exist in local storage for this browser.";
+async function initializeResultsPage() {
+  if (!resultsPollId) {
+    renderMissing("This poll link is missing or invalid.");
     return;
   }
 
+  let resultData;
+  try {
+    resultData = await resultsApi.getResults(resultsPollId);
+  } catch {
+    renderMissing("This poll link is missing or the poll could not be found on the server.");
+    return;
+  }
+
+  resultsPoll = resultData.poll;
   resultsElements.content.classList.remove("hidden");
-  renderResultsPage();
+  renderResultsPage(resultData.talliedDates, resultData.winner);
 }
 
-function renderResultsPage() {
-  const talliedDates = resultsApi.tallyResults(resultsPoll);
-  const winner = talliedDates.find((date) => !date.disqualified) ?? null;
+function renderMissing(message) {
+  resultsElements.missing.classList.remove("hidden");
+  resultsElements.missing.textContent = message;
+}
 
+function renderResultsPage(talliedDates, winner) {
   resultsElements.title.textContent = resultsPoll.title;
   resultsElements.subtitle.textContent = `${resultsPoll.votes.length} vote${
     resultsPoll.votes.length === 1 ? "" : "s"
   } submitted`;
-  resultsElements.winnerLabel.textContent = winner ? winner.label : "No eligible date";
+  resultsElements.winnerLabel.textContent = winner ? resultsApi.formatDate(winner.value) : "No eligible date";
   resultsElements.winnerScore.textContent = winner
     ? `${winner.score.toFixed(3)} points`
     : "Every date has been disqualified.";
@@ -44,7 +53,7 @@ function renderResultsPage() {
   talliedDates.forEach((date) => {
     const row = document.createElement("tr");
     row.innerHTML = `
-      <td>${escapeHtml(date.label)}</td>
+      <td>${escapeHtml(resultsApi.formatDate(date.value))}</td>
       <td><span class="status-pill ${date.disqualified ? "status-disqualified" : "status-active"}">${
         date.disqualified ? "Disqualified" : "Eligible"
       }</span></td>

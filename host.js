@@ -20,20 +20,24 @@ const hostElements = {
 
 let activePoll = null;
 
-initializeHostPage();
+void initializeHostPage();
 
-function initializeHostPage() {
+async function initializeHostPage() {
   hostElements.addDate.addEventListener("click", () => addDateInput());
   hostElements.loadSample.addEventListener("click", loadSampleDates);
-  hostElements.clearStorage.addEventListener("click", clearAllPolls);
-  hostElements.form.addEventListener("submit", submitPoll);
+  hostElements.clearStorage.addEventListener("click", () => {
+    void clearAllPolls();
+  });
+  hostElements.form.addEventListener("submit", (event) => {
+    void submitPoll(event);
+  });
   document.querySelectorAll("[data-copy-target]").forEach((button) => {
     button.addEventListener("click", () => copyFieldValue(button.dataset.copyTarget));
   });
 
   addDateInput();
   addDateInput();
-  renderSavedPolls();
+  await renderSavedPolls();
 }
 
 function addDateInput(value = "") {
@@ -60,18 +64,29 @@ function loadSampleDates() {
   ["2026-03-25", "2026-03-27", "2026-03-29"].forEach((value) => addDateInput(value));
 }
 
-function clearAllPolls() {
-  hostApi.clearPolls();
+async function clearAllPolls() {
+  const confirmed = window.confirm("Clear every poll and vote from the shared database?");
+  if (!confirmed) {
+    return;
+  }
+
+  try {
+    await hostApi.clearPolls();
+  } catch (error) {
+    window.alert(error.message);
+    return;
+  }
+
   activePoll = null;
   hostElements.form.reset();
   hostElements.dateInputs.innerHTML = "";
   addDateInput();
   addDateInput();
   renderShareCard();
-  renderSavedPolls();
+  await renderSavedPolls();
 }
 
-function submitPoll(event) {
+async function submitPoll(event) {
   event.preventDefault();
 
   const title = hostElements.title.value.trim();
@@ -86,9 +101,13 @@ function submitPoll(event) {
     return;
   }
 
-  activePoll = hostApi.createPoll(title, dateValues);
-  renderShareCard();
-  renderSavedPolls();
+  try {
+    activePoll = await hostApi.createPoll(title, dateValues);
+    renderShareCard();
+    await renderSavedPolls();
+  } catch (error) {
+    window.alert(error.message);
+  }
 }
 
 function renderShareCard() {
@@ -111,14 +130,24 @@ function renderShareCard() {
   hostElements.openResultsLink.href = resultsLink;
 }
 
-function renderSavedPolls() {
-  const polls = hostApi.getAllPolls();
+async function renderSavedPolls() {
   hostElements.pollList.innerHTML = "";
+
+  let polls;
+  try {
+    polls = await hostApi.getAllPolls();
+  } catch (error) {
+    const empty = document.createElement("div");
+    empty.className = "empty-state";
+    empty.textContent = error.message;
+    hostElements.pollList.append(empty);
+    return;
+  }
 
   if (polls.length === 0) {
     const empty = document.createElement("div");
     empty.className = "empty-state";
-    empty.textContent = "No polls saved in this browser yet.";
+    empty.textContent = "No polls saved on the server yet.";
     hostElements.pollList.append(empty);
     return;
   }
@@ -132,7 +161,7 @@ function renderSavedPolls() {
     item.innerHTML = `
       <div>
         <h3>${escapeHtml(poll.title)}</h3>
-        <p>${poll.dates.length} dates • ${poll.votes.length} vote${poll.votes.length === 1 ? "" : "s"}</p>
+        <p>${poll.dateCount} dates | ${poll.voteCount} vote${poll.voteCount === 1 ? "" : "s"}</p>
       </div>
       <div class="link-actions">
         <a class="button-link" href="${voteLink}">Voting Page</a>
@@ -146,6 +175,10 @@ function renderSavedPolls() {
 
 function copyFieldValue(fieldId) {
   const input = document.getElementById(fieldId);
+  if (!input.value) {
+    return;
+  }
+
   input.select();
   input.setSelectionRange(0, input.value.length);
 

@@ -11,14 +11,21 @@ const voteElements = {
 };
 
 const votePollId = voteApi.getPollIdFromLocation();
-const votePoll = votePollId ? voteApi.getPoll(votePollId) : null;
+let votePoll = null;
 let draggedItem = null;
 
-initializeVotePage();
+void initializeVotePage();
 
-function initializeVotePage() {
-  if (!votePoll) {
-    renderMissingVotePoll();
+async function initializeVotePage() {
+  if (!votePollId) {
+    renderMissingVotePoll("This poll link is missing or invalid.");
+    return;
+  }
+
+  try {
+    votePoll = await voteApi.getPoll(votePollId);
+  } catch {
+    renderMissingVotePoll("This poll link is missing or the poll could not be found on the server.");
     return;
   }
 
@@ -26,13 +33,14 @@ function initializeVotePage() {
   voteElements.title.textContent = votePoll.title;
   voteElements.resultsCta.href = voteApi.buildPageLink("results.html", votePoll.id);
   renderRankingList();
-  voteElements.form.addEventListener("submit", submitVote);
+  voteElements.form.addEventListener("submit", (event) => {
+    void submitVote(event);
+  });
 }
 
-function renderMissingVotePoll() {
+function renderMissingVotePoll(message) {
   voteElements.missing.classList.remove("hidden");
-  voteElements.missing.textContent =
-    "This poll link is missing or does not exist in local storage for this browser.";
+  voteElements.missing.textContent = message;
 }
 
 function renderRankingList() {
@@ -41,7 +49,6 @@ function renderRankingList() {
   votePoll.dates.forEach((date) => {
     const fragment = voteElements.rankingTemplate.content.cloneNode(true);
     const item = fragment.querySelector(".ranking-item");
-    const position = fragment.querySelector(".ranking-position");
     const label = fragment.querySelector(".ranking-label");
     const unavailable = fragment.querySelector(".unavailable-toggle");
 
@@ -102,7 +109,7 @@ function refreshRankingPositions() {
   });
 }
 
-function submitVote(event) {
+async function submitVote(event) {
   event.preventDefault();
 
   const voterName = voteElements.voterName.value.trim();
@@ -121,7 +128,7 @@ function submitVote(event) {
       return;
     }
 
-    rankings.push({ dateId: item.dataset.dateId });
+    rankings.push(item.dataset.dateId);
   });
 
   if (rankings.length === 0) {
@@ -129,13 +136,14 @@ function submitVote(event) {
     return;
   }
 
-  voteApi.saveVote(votePoll.id, {
-    id: crypto.randomUUID(),
-    voterName,
-    createdAt: new Date().toISOString(),
-    rankings,
-    unavailableDateIds,
-  });
-
-  window.location.href = voteApi.buildPageLink("results.html", votePoll.id);
+  try {
+    await voteApi.saveVote(votePoll.id, {
+      voterName,
+      rankings,
+      unavailableDateIds,
+    });
+    window.location.href = voteApi.buildPageLink("results.html", votePoll.id);
+  } catch (error) {
+    window.alert(error.message);
+  }
 }
