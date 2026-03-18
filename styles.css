@@ -1,0 +1,352 @@
+:root {
+  --bg: #f3eadf;
+  --panel: rgba(255, 249, 239, 0.94);
+  --panel-border: rgba(84, 55, 25, 0.14);
+  --text: #2d2217;
+  --muted: #705845;
+  --primary: #914a27;
+  --primary-strong: #6e3418;
+  --danger: #8d2f2f;
+  --success: #45613c;
+  --shadow: 0 20px 45px rgba(80, 53, 20, 0.15);
+  --radius: 22px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: "Segoe UI", "Trebuchet MS", sans-serif;
+  color: var(--text);
+  background:
+    radial-gradient(circle at top, rgba(255, 240, 214, 0.85), transparent 38%),
+    linear-gradient(160deg, var(--bg) 0%, #e8ddcb 48%, #d7c1a4 100%);
+}
+
+button,
+input,
+select,
+a {
+  font: inherit;
+}
+
+.page-shell {
+  width: min(1180px, calc(100% - 2rem));
+  margin: 0 auto;
+  padding: 2rem 0 3rem;
+}
+
+.hero {
+  padding: 2rem;
+  margin-bottom: 1.5rem;
+  border-radius: calc(var(--radius) + 8px);
+  background:
+    linear-gradient(135deg, rgba(71, 42, 20, 0.92), rgba(146, 86, 45, 0.82)),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160' viewBox='0 0 160 160'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23f7e9ce' fill-opacity='.08'%3E%3Cpath d='M80 0 96 48l48 16-48 16-16 48-16-48L16 64l48-16z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+  color: #fff4e8;
+  box-shadow: var(--shadow);
+}
+
+.eyebrow,
+h1,
+h2,
+h3 {
+  margin: 0;
+  font-family: Georgia, "Times New Roman", serif;
+}
+
+.eyebrow {
+  margin-bottom: 0.6rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  font-size: 0.82rem;
+  opacity: 0.84;
+}
+
+h1 {
+  font-size: clamp(2.4rem, 6vw, 4.4rem);
+  line-height: 1.04;
+}
+
+.hero-copy {
+  max-width: 52rem;
+  margin: 1rem 0 0;
+  color: rgba(255, 244, 232, 0.88);
+  font-size: 1.08rem;
+}
+
+.page-grid {
+  display: grid;
+  gap: 1.5rem;
+}
+
+.page-grid-host {
+  grid-template-columns: 1.2fr 1fr;
+}
+
+.page-grid-host .panel:last-child {
+  grid-column: 1 / -1;
+}
+
+.page-grid-vote,
+.page-grid-results {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  padding: 1.35rem;
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(8px);
+}
+
+.panel-heading {
+  margin-bottom: 1rem;
+}
+
+.panel-heading p,
+.summary-label,
+small {
+  color: var(--muted);
+}
+
+.stack {
+  display: grid;
+  gap: 1rem;
+}
+
+.field {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.field span {
+  font-weight: 700;
+}
+
+input,
+select {
+  width: 100%;
+  border: 1px solid rgba(113, 82, 52, 0.18);
+  background: rgba(255, 255, 255, 0.85);
+  padding: 0.85rem 0.95rem;
+  color: var(--text);
+  border-radius: 14px;
+}
+
+button,
+.button-link {
+  border: 0;
+  border-radius: 14px;
+  padding: 0.9rem 1.2rem;
+  background: #e7d7c4;
+  color: var(--text);
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 160ms ease, background 160ms ease;
+}
+
+button:hover,
+.button-link:hover {
+  transform: translateY(-1px);
+  background: #dcc7af;
+}
+
+button.primary {
+  background: var(--primary);
+  color: #fff7ef;
+}
+
+button.primary:hover {
+  background: var(--primary-strong);
+}
+
+button.danger {
+  background: rgba(141, 47, 47, 0.12);
+  color: var(--danger);
+}
+
+.button-row,
+.link-actions,
+.copy-row {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.copy-row input {
+  flex: 1;
+  min-width: 0;
+}
+
+.empty-state {
+  padding: 1rem;
+  border-radius: 18px;
+  background: rgba(230, 214, 191, 0.4);
+  color: var(--muted);
+}
+
+.hidden {
+  display: none !important;
+}
+
+.date-input-row {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.date-input-row .date-input {
+  flex: 1;
+  min-width: 220px;
+}
+
+.summary-card,
+.winner-card {
+  padding: 1rem 1.1rem;
+  border-radius: 18px;
+  background: linear-gradient(135deg, rgba(255, 246, 231, 0.94), rgba(233, 212, 185, 0.72));
+}
+
+.winner-card {
+  margin: 1rem 0;
+}
+
+.saved-polls,
+.vote-list {
+  display: grid;
+  gap: 0.8rem;
+}
+
+.saved-poll,
+.vote-item {
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.95rem 1rem;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(113, 82, 52, 0.12);
+}
+
+.saved-poll p,
+.vote-item p {
+  margin: 0.3rem 0 0;
+  color: var(--muted);
+}
+
+.ranking-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.85rem;
+}
+
+.ranking-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.76);
+  border: 1px solid rgba(113, 82, 52, 0.14);
+  cursor: grab;
+}
+
+.ranking-item.dragging {
+  opacity: 0.55;
+}
+
+.ranking-item-unavailable {
+  background: rgba(141, 47, 47, 0.08);
+}
+
+.ranking-position {
+  margin: 0 0 0.35rem;
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.checkbox-field {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.checkbox-field input {
+  width: auto;
+}
+
+.table-wrap {
+  overflow-x: auto;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+th,
+td {
+  padding: 0.9rem 0.75rem;
+  border-bottom: 1px solid rgba(113, 82, 52, 0.12);
+  text-align: left;
+}
+
+th {
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 0.95rem;
+}
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.35rem 0.7rem;
+  border-radius: 999px;
+  font-weight: 700;
+  font-size: 0.85rem;
+}
+
+.status-active {
+  background: rgba(69, 97, 60, 0.14);
+  color: var(--success);
+}
+
+.status-disqualified {
+  background: rgba(141, 47, 47, 0.12);
+  color: var(--danger);
+}
+
+.panel-subsection {
+  margin-top: 1.4rem;
+}
+
+@media (max-width: 960px) {
+  .page-grid-host {
+    grid-template-columns: 1fr;
+  }
+
+  .saved-poll,
+  .vote-item,
+  .ranking-item {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .copy-row {
+    flex-direction: column;
+  }
+}

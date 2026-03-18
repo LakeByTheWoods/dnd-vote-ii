@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>D&D Date Vote | Vote</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="hero">
+        <p class="eyebrow">Page 2</p>
+        <h1>Rank Your Preferred Dates</h1>
+        <p class="hero-copy">
+          Drag dates into your preferred order and mark any dates you absolutely
+          cannot attend.
+        </p>
+      </header>
+
+      <main class="page-grid page-grid-vote">
+        <section class="panel">
+          <div id="vote-missing" class="empty-state hidden"></div>
+
+          <div id="vote-content" class="hidden">
+            <div class="panel-heading">
+              <h2 id="vote-page-title"></h2>
+              <p>
+                Highest ranked available date earns 1 point, then each next
+                preference earns two-thirds of the previous score.
+              </p>
+            </div>
+
+            <form id="vote-form" class="stack">
+              <label class="field">
+                <span>Your name</span>
+                <input
+                  id="voter-name"
+                  name="voterName"
+                  type="text"
+                  placeholder="Shadowheart"
+                  required
+                />
+              </label>
+
+              <div class="field">
+                <span>Drag to rank your available dates</span>
+                <ul id="ranking-list" class="ranking-list"></ul>
+                <small>Top to bottom means first choice to last choice.</small>
+              </div>
+
+              <div class="button-row">
+                <button type="submit" class="primary">Submit Vote</button>
+                <a id="results-cta" class="button-link" href="./results.html">View Results</a>
+              </div>
+            </form>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <template id="ranking-item-template">
+      <li class="ranking-item" draggable="true">
+        <div>
+          <p class="ranking-position"></p>
+          <strong class="ranking-label"></strong>
+        </div>
+        <label class="checkbox-field">
+          <input type="checkbox" class="unavailable-toggle" />
+          <span>Unavailable</span>
+        </label>
+      </li>
+    </template>
+
+    <script src="./shared.js"></script>
+    <script src="./vote.js"></script>
+  </body>
+</html>

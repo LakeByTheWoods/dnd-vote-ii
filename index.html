@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>D&D Date Vote | Host</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="hero">
+        <p class="eyebrow">Page 1</p>
+        <h1>Create A D&D Poll</h1>
+        <p class="hero-copy">
+          Hosts can pick candidate dates from calendar inputs, save a poll, and
+          generate dedicated links for voting and results.
+        </p>
+      </header>
+
+      <main class="page-grid page-grid-host">
+        <section class="panel">
+          <div class="panel-heading">
+            <h2>New Poll</h2>
+            <p>Choose a title and add the dates your party could play.</p>
+          </div>
+
+          <form id="host-form" class="stack">
+            <label class="field">
+              <span>Poll title</span>
+              <input
+                id="poll-title"
+                name="title"
+                type="text"
+                placeholder="Curse of Strahd Session"
+                required
+              />
+            </label>
+
+            <div class="field">
+              <span>Possible dates</span>
+              <div id="date-inputs" class="stack"></div>
+              <div class="button-row">
+                <button type="button" id="add-date">Add Another Date</button>
+                <button type="button" id="load-sample">Load Sample</button>
+              </div>
+              <small>Each date uses a calendar picker.</small>
+            </div>
+
+            <div class="button-row">
+              <button type="submit" class="primary">Create Poll</button>
+              <button type="button" id="clear-storage" class="danger">Clear All Polls</button>
+            </div>
+          </form>
+        </section>
+
+        <section class="panel">
+          <div class="panel-heading">
+            <h2>Share Links</h2>
+            <p>Creating a poll generates unique URLs for voters and results.</p>
+          </div>
+
+          <div id="share-empty" class="empty-state">
+            No active poll yet. Create one to generate shareable links.
+          </div>
+
+          <div id="share-card" class="stack hidden">
+            <div class="summary-card">
+              <p class="summary-label">Current poll</p>
+              <h3 id="share-title"></h3>
+              <p id="share-date-count"></p>
+            </div>
+
+            <label class="field">
+              <span>Voting page link</span>
+              <div class="copy-row">
+                <input id="vote-link" readonly />
+                <button type="button" data-copy-target="vote-link">Copy</button>
+              </div>
+            </label>
+
+            <label class="field">
+              <span>Results page link</span>
+              <div class="copy-row">
+                <input id="results-link" readonly />
+                <button type="button" data-copy-target="results-link">Copy</button>
+              </div>
+            </label>
+
+            <div class="link-actions">
+              <a id="open-vote-link" class="button-link" href="./vote.html">Open Voting Page</a>
+              <a id="open-results-link" class="button-link" href="./results.html">Open Results Page</a>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-heading">
+            <h2>Saved Polls</h2>
+            <p>Recent polls stored in this browser.</p>
+          </div>
+
+          <div id="poll-list" class="saved-polls"></div>
+        </section>
+      </main>
+    </div>
+
+    <template id="date-input-template">
+      <div class="date-input-row">
+        <input type="date" class="date-input" required />
+        <button type="button" class="danger remove-date">Remove</button>
+      </div>
+    </template>
+
+    <script src="./shared.js"></script>
+    <script src="./host.js"></script>
+  </body>
+</html>

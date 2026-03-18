@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>D&D Date Vote | Results</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="hero">
+        <p class="eyebrow">Page 3</p>
+        <h1>Poll Results</h1>
+        <p class="hero-copy">
+          Review the ranked totals, see which dates were disqualified, and track
+          every submitted ballot.
+        </p>
+      </header>
+
+      <main class="page-grid page-grid-results">
+        <section class="panel">
+          <div id="results-missing" class="empty-state hidden"></div>
+
+          <div id="results-content" class="hidden">
+            <div class="summary-card">
+              <p class="summary-label">Active poll</p>
+              <h2 id="results-title"></h2>
+              <p id="results-subtitle"></p>
+            </div>
+
+            <div class="winner-card">
+              <p class="summary-label">Leading eligible date</p>
+              <h3 id="winner-label"></h3>
+              <p id="winner-score"></p>
+            </div>
+
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Status</th>
+                    <th>Score</th>
+                    <th>Unavailable by</th>
+                  </tr>
+                </thead>
+                <tbody id="results-table-body"></tbody>
+              </table>
+            </div>
+
+            <div class="panel-subsection">
+              <h3>Submitted Votes</h3>
+              <div id="votes-list" class="vote-list"></div>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script src="./shared.js"></script>
+    <script src="./results.js"></script>
+  </body>
+</html>
