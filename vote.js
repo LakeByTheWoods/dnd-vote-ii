@@ -5,12 +5,15 @@ const voteElements = {
   title: document.querySelector("#vote-page-title"),
   form: document.querySelector("#vote-form"),
   voterName: document.querySelector("#voter-name"),
+  voteStatus: document.querySelector("#vote-status"),
   rankingList: document.querySelector("#ranking-list"),
   rankingTemplate: document.querySelector("#ranking-item-template"),
   resultsCta: document.querySelector("#results-cta"),
 };
 
 const votePollId = voteApi.getPollIdFromLocation();
+const voteParams = new URLSearchParams(window.location.search);
+const initialVoterName = voteParams.get("voter")?.trim() ?? "";
 let votePoll = null;
 let draggedItem = null;
 
@@ -33,9 +36,16 @@ async function initializeVotePage() {
   voteElements.title.textContent = votePoll.title;
   voteElements.resultsCta.href = voteApi.buildPageLink("results.html", votePoll.id);
   renderRankingList();
+  voteElements.voterName.addEventListener("change", handleVoterLookup);
+  voteElements.voterName.addEventListener("blur", handleVoterLookup);
   voteElements.form.addEventListener("submit", (event) => {
     void submitVote(event);
   });
+
+  if (initialVoterName) {
+    voteElements.voterName.value = initialVoterName;
+    applyExistingVote(initialVoterName);
+  }
 }
 
 function renderMissingVotePoll(message) {
@@ -61,6 +71,17 @@ function renderRankingList() {
     wireDragAndDrop(item);
     voteElements.rankingList.append(fragment);
   });
+}
+
+function handleVoterLookup() {
+  const voterName = voteElements.voterName.value.trim();
+  if (!voterName) {
+    clearVoteStatus();
+    clearBallotSelection();
+    return;
+  }
+
+  applyExistingVote(voterName);
 }
 
 function wireDragAndDrop(item) {
@@ -139,6 +160,74 @@ function clearDropTargets() {
   });
 }
 
+function applyExistingVote(voterName) {
+  const existingVote = findVoteByName(voterName);
+  clearBallotSelection();
+
+  if (!existingVote) {
+    renderVoteStatus("No existing ballot found for this name yet. You’re creating a new one.");
+    return;
+  }
+
+  const itemsByDateId = new Map(
+    [...voteElements.rankingList.children].map((item) => [item.dataset.dateId, item])
+  );
+
+  existingVote.rankings
+    .slice()
+    .sort((left, right) => left.position - right.position)
+    .forEach((ranking) => {
+      const item = itemsByDateId.get(ranking.dateId);
+      if (item) {
+        voteElements.rankingList.append(item);
+      }
+    });
+
+  existingVote.unavailableDateIds.forEach((dateId) => {
+    const item = itemsByDateId.get(dateId);
+    if (!item) {
+      return;
+    }
+    const checkbox = item.querySelector(".unavailable-toggle");
+    checkbox.checked = true;
+    item.classList.add("ranking-item-unavailable");
+  });
+
+  renderVoteStatus("Loaded your existing ballot. Drag items to update it, then submit again.");
+}
+
+function findVoteByName(voterName) {
+  const normalizedName = voterName.trim().toLowerCase();
+  return (
+    votePoll.votes.find((vote) => vote.voterName.trim().toLowerCase() === normalizedName) ?? null
+  );
+}
+
+function clearBallotSelection() {
+  [...voteElements.rankingList.children].forEach((item) => {
+    const checkbox = item.querySelector(".unavailable-toggle");
+    checkbox.checked = false;
+    item.classList.remove("ranking-item-unavailable");
+  });
+
+  votePoll.dates.forEach((date) => {
+    const item = [...voteElements.rankingList.children].find((entry) => entry.dataset.dateId === date.id);
+    if (item) {
+      voteElements.rankingList.append(item);
+    }
+  });
+}
+
+function renderVoteStatus(message) {
+  voteElements.voteStatus.textContent = message;
+  voteElements.voteStatus.classList.remove("hidden");
+}
+
+function clearVoteStatus() {
+  voteElements.voteStatus.textContent = "";
+  voteElements.voteStatus.classList.add("hidden");
+}
+
 async function submitVote(event) {
   event.preventDefault();
 
@@ -172,7 +261,9 @@ async function submitVote(event) {
       rankings,
       unavailableDateIds,
     });
-    window.location.href = voteApi.buildPageLink("results.html", votePoll.id);
+    const redirectUrl = new URL(voteApi.buildPageLink("results.html", votePoll.id));
+    redirectUrl.searchParams.set("voter", voterName);
+    window.location.href = redirectUrl.toString();
   } catch (error) {
     window.alert(error.message);
   }

@@ -46,6 +46,14 @@
     return data.poll;
   }
 
+  async function deleteVote(pollId, voteId) {
+    const data = await apiRequest(
+      `/api/polls/${encodeURIComponent(pollId)}/votes/${encodeURIComponent(voteId)}`,
+      { method: "DELETE" }
+    );
+    return data.poll;
+  }
+
   async function getResults(pollId) {
     return apiRequest(`/api/polls/${encodeURIComponent(pollId)}/results`);
   }
@@ -86,6 +94,7 @@
     getPollIdFromLocation,
     getResults,
     buildPageLink,
+    deleteVote,
     saveVote,
   };
 })();

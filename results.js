@@ -88,13 +88,58 @@ function renderResultsPage(talliedDates, winner) {
       })
       .join(", ");
 
-    item.innerHTML = `
+    const info = document.createElement("div");
+    info.innerHTML = `
       <strong>${escapeHtml(vote.voterName)}</strong>
       <p>Ranked: ${escapeHtml(rankedSummary || "None")}</p>
       <p>Unavailable: ${escapeHtml(unavailableSummary || "None")}</p>
     `;
+
+    const actions = document.createElement("div");
+    actions.className = "link-actions";
+
+    const editLink = document.createElement("a");
+    editLink.className = "button-link";
+    editLink.textContent = "Edit Vote";
+    const editUrl = new URL(resultsApi.buildPageLink("vote.html", resultsPoll.id));
+    editUrl.searchParams.set("voter", vote.voterName);
+    editLink.href = editUrl.toString();
+
+    const deleteButton = document.createElement("button");
+    deleteButton.type = "button";
+    deleteButton.className = "danger";
+    deleteButton.textContent = "Delete Vote";
+    deleteButton.addEventListener("click", () => {
+      void handleDeleteVote(vote);
+    });
+
+    actions.append(editLink, deleteButton);
+    item.append(info, actions);
     resultsElements.votesList.append(item);
   });
+}
+
+async function handleDeleteVote(vote) {
+  const confirmed = window.confirm(`Delete ${vote.voterName}'s vote? This cannot be undone.`);
+  if (!confirmed) {
+    return;
+  }
+
+  try {
+    const resultData = await resultsApi.getResults(resultsPollId);
+    resultsPoll = resultData.poll;
+    if (!resultsPoll.votes.some((entry) => entry.id === vote.id)) {
+      renderResultsPage(resultData.talliedDates, resultData.winner);
+      return;
+    }
+
+    await resultsApi.deleteVote(resultsPollId, vote.id);
+    const refreshed = await resultsApi.getResults(resultsPollId);
+    resultsPoll = refreshed.poll;
+    renderResultsPage(refreshed.talliedDates, refreshed.winner);
+  } catch (error) {
+    window.alert(error.message);
+  }
 }
 
 function escapeHtml(value) {

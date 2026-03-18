@@ -259,6 +259,22 @@ def replace_vote(
     return fetch_poll(poll_id)
 
 
+def delete_vote(poll_id: str, vote_id: str) -> dict | None:
+    poll = fetch_poll(poll_id)
+    if poll is None:
+        return None
+
+    with get_connection() as connection:
+        deleted = connection.execute(
+            "DELETE FROM votes WHERE id = ? AND poll_id = ?",
+            (vote_id, poll_id),
+        )
+        if deleted.rowcount == 0:
+            raise ValueError("Vote not found.")
+
+    return fetch_poll(poll_id)
+
+
 def tally_results(poll: dict) -> list[dict]:
     tallies = [
         {
@@ -504,14 +520,10 @@ class AppHandler(BaseHTTPRequestHandler):
 
     def do_DELETE(self) -> None:
         parsed = urlparse(self.path)
-        if parsed.path != "/api/polls":
+        if not parsed.path.startswith("/api/"):
             self.send_error(HTTPStatus.NOT_FOUND, "Not Found")
             return
-
-        with get_connection() as connection:
-            connection.execute("DELETE FROM polls")
-
-        self.send_json({"ok": True})
+        self.handle_api_delete(parsed.path)
 
     def handle_api_get(self, path: str) -> None:
         if path == "/api/polls":
@@ -595,6 +607,31 @@ class AppHandler(BaseHTTPRequestHandler):
                 return
 
             self.send_json({"poll": poll}, status=HTTPStatus.CREATED)
+            return
+
+        self.send_json({"error": "Route not found."}, status=HTTPStatus.NOT_FOUND)
+
+    def handle_api_delete(self, path: str) -> None:
+        if path == "/api/polls":
+            with get_connection() as connection:
+                connection.execute("DELETE FROM polls")
+
+            self.send_json({"ok": True})
+            return
+
+        parts = [part for part in path.split("/") if part]
+        if len(parts) == 5 and parts[1] == "polls" and parts[3] == "votes":
+            try:
+                poll = delete_vote(parts[2], parts[4])
+            except ValueError as error:
+                self.send_json({"error": str(error)}, status=HTTPStatus.NOT_FOUND)
+                return
+
+            if poll is None:
+                self.send_json({"error": "Poll not found."}, status=HTTPStatus.NOT_FOUND)
+                return
+
+            self.send_json({"poll": poll})
             return
 
         self.send_json({"error": "Route not found."}, status=HTTPStatus.NOT_FOUND)
