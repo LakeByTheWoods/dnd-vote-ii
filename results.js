@@ -46,7 +46,7 @@ function renderResultsPage(talliedDates, winner) {
   } submitted`;
   resultsElements.winnerLabel.textContent = winner ? resultsApi.formatDate(winner.value) : "No eligible date";
   resultsElements.winnerScore.textContent = winner
-    ? `${winner.score.toFixed(3)} points`
+    ? `${winner.record} head-to-head record`
     : "Every date has been disqualified.";
 
   resultsElements.tableBody.innerHTML = "";
@@ -57,7 +57,7 @@ function renderResultsPage(talliedDates, winner) {
       <td><span class="status-pill ${date.disqualified ? "status-disqualified" : "status-active"}">${
         date.disqualified ? "Disqualified" : "Eligible"
       }</span></td>
-      <td>${date.disqualified ? "0.000" : date.score.toFixed(3)}</td>
+      <td>${date.disqualified ? "-" : escapeHtml(date.record)}</td>
       <td>${escapeHtml(date.unavailableBy.join(", ") || "None")}</td>
     `;
     resultsElements.tableBody.append(row);

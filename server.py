@@ -15,7 +15,6 @@ from uuid import uuid4
 ROOT = Path(__file__).resolve().parent
 DATA_DIR = Path(os.environ.get("DND_VOTE_DATA_DIR", ROOT / "data")).resolve()
 DB_PATH = DATA_DIR / "dnd_vote.db"
-SCORE_RATIO = 2 / 3
 STATIC_FILES = {
     "/": ("index.html", "text/html; charset=utf-8"),
     "/index.html": ("index.html", "text/html; charset=utf-8"),
@@ -265,7 +264,11 @@ def tally_results(poll: dict) -> list[dict]:
         {
             "id": date["id"],
             "value": date["value"],
-            "score": 0.0,
+            "pairwiseWins": 0,
+            "pairwiseLosses": 0,
+            "pairwiseTies": 0,
+            "record": "0-0-0",
+            "rank": None,
             "unavailableBy": [],
             "disqualified": False,
         }
@@ -282,17 +285,186 @@ def tally_results(poll: dict) -> list[dict]:
             if vote["voterName"] not in result["unavailableBy"]:
                 result["unavailableBy"].append(vote["voterName"])
 
-    for vote in poll["votes"]:
-        for ranking in vote["rankings"]:
-            result = by_id.get(ranking["dateId"])
-            if result is None or result["disqualified"]:
-                continue
-            result["score"] += SCORE_RATIO ** (ranking["position"] - 1)
+    eligible_ids = [item["id"] for item in tallies if not item["disqualified"]]
+    if len(eligible_ids) <= 1:
+        for item in tallies:
+            if not item["disqualified"]:
+                item["rank"] = 1
+            item["record"] = f'{item["pairwiseWins"]}-{item["pairwiseLosses"]}-{item["pairwiseTies"]}'
+        return sorted(
+            tallies,
+            key=lambda item: (item["disqualified"], item["value"]),
+        )
+
+    preference_matrix = build_preference_matrix(poll["votes"], eligible_ids)
+    pair_results = build_pair_results(preference_matrix, eligible_ids)
+
+    for pair in pair_results:
+        winner = by_id[pair["winnerId"]]
+        loser = by_id[pair["loserId"]]
+        winner["pairwiseWins"] += 1
+        loser["pairwiseLosses"] += 1
+
+    for left_index, left_id in enumerate(eligible_ids):
+        for right_id in eligible_ids[left_index + 1 :]:
+            left_votes = preference_matrix[left_id][right_id]
+            right_votes = preference_matrix[right_id][left_id]
+            if left_votes == right_votes:
+                by_id[left_id]["pairwiseTies"] += 1
+                by_id[right_id]["pairwiseTies"] += 1
+
+    locked_edges = build_ranked_pairs_graph(pair_results, eligible_ids)
+    ordered_ids = topological_order(locked_edges, eligible_ids, by_id)
+
+    for index, date_id in enumerate(ordered_ids, start=1):
+        by_id[date_id]["rank"] = index
+
+    for item in tallies:
+        item["record"] = f'{item["pairwiseWins"]}-{item["pairwiseLosses"]}-{item["pairwiseTies"]}'
 
     return sorted(
         tallies,
-        key=lambda item: (item["disqualified"], -item["score"], item["value"]),
+        key=lambda item: (
+            item["disqualified"],
+            item["rank"] if item["rank"] is not None else 10_000,
+            -item["pairwiseWins"],
+            item["pairwiseLosses"],
+            item["value"],
+        ),
     )
+
+
+def build_preference_matrix(votes: list[dict], eligible_ids: list[str]) -> dict[str, dict[str, int]]:
+    matrix = {
+        left_id: {right_id: 0 for right_id in eligible_ids if right_id != left_id}
+        for left_id in eligible_ids
+    }
+
+    for vote in votes:
+        unavailable_ids = set(vote["unavailableDateIds"])
+        ranking_positions = {
+            ranking["dateId"]: ranking["position"]
+            for ranking in vote["rankings"]
+            if ranking["dateId"] in matrix
+        }
+        max_position = len(ranking_positions) + 1
+
+        for left_index, left_id in enumerate(eligible_ids):
+            if left_id in unavailable_ids:
+                continue
+            left_position = ranking_positions.get(left_id, max_position)
+
+            for right_id in eligible_ids[left_index + 1 :]:
+                if right_id in unavailable_ids:
+                    continue
+
+                right_position = ranking_positions.get(right_id, max_position)
+                if left_position < right_position:
+                    matrix[left_id][right_id] += 1
+                elif right_position < left_position:
+                    matrix[right_id][left_id] += 1
+
+    return matrix
+
+
+def build_pair_results(
+    preference_matrix: dict[str, dict[str, int]],
+    eligible_ids: list[str],
+) -> list[dict]:
+    pairs = []
+    for left_index, left_id in enumerate(eligible_ids):
+        for right_id in eligible_ids[left_index + 1 :]:
+            left_votes = preference_matrix[left_id][right_id]
+            right_votes = preference_matrix[right_id][left_id]
+            if left_votes == right_votes:
+                continue
+
+            winner_id = left_id if left_votes > right_votes else right_id
+            loser_id = right_id if winner_id == left_id else left_id
+            winner_votes = max(left_votes, right_votes)
+            loser_votes = min(left_votes, right_votes)
+            pairs.append(
+                {
+                    "winnerId": winner_id,
+                    "loserId": loser_id,
+                    "winnerVotes": winner_votes,
+                    "loserVotes": loser_votes,
+                    "margin": winner_votes - loser_votes,
+                }
+            )
+
+    return sorted(
+        pairs,
+        key=lambda pair: (
+            -pair["margin"],
+            -pair["winnerVotes"],
+            pair["winnerId"],
+            pair["loserId"],
+        ),
+    )
+
+
+def build_ranked_pairs_graph(pair_results: list[dict], eligible_ids: list[str]) -> dict[str, set[str]]:
+    locked_edges = {date_id: set() for date_id in eligible_ids}
+
+    for pair in pair_results:
+        winner_id = pair["winnerId"]
+        loser_id = pair["loserId"]
+        if creates_cycle(locked_edges, winner_id, loser_id):
+            continue
+        locked_edges[winner_id].add(loser_id)
+
+    return locked_edges
+
+
+def creates_cycle(locked_edges: dict[str, set[str]], winner_id: str, loser_id: str) -> bool:
+    stack = [loser_id]
+    seen = set()
+    while stack:
+        current = stack.pop()
+        if current == winner_id:
+            return True
+        if current in seen:
+            continue
+        seen.add(current)
+        stack.extend(locked_edges[current])
+    return False
+
+
+def topological_order(
+    locked_edges: dict[str, set[str]],
+    eligible_ids: list[str],
+    by_id: dict[str, dict],
+) -> list[str]:
+    incoming_counts = {date_id: 0 for date_id in eligible_ids}
+    for losers in locked_edges.values():
+        for loser_id in losers:
+            incoming_counts[loser_id] += 1
+
+    ordered = []
+    remaining = set(eligible_ids)
+
+    while remaining:
+        available = [date_id for date_id in remaining if incoming_counts[date_id] == 0]
+        if not available:
+            available = list(remaining)
+
+        available.sort(
+            key=lambda date_id: (
+                -by_id[date_id]["pairwiseWins"],
+                by_id[date_id]["pairwiseLosses"],
+                by_id[date_id]["value"],
+            )
+        )
+
+        chosen_id = available[0]
+        ordered.append(chosen_id)
+        remaining.remove(chosen_id)
+
+        for loser_id in locked_edges[chosen_id]:
+            incoming_counts[loser_id] -= 1
+
+    return ordered
 
 
 class AppHandler(BaseHTTPRequestHandler):
