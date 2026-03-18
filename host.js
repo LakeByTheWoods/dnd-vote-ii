@@ -1,6 +1,6 @@
 const hostApi = window.DndVoteApp;
 const MONTHS_PER_VIEW = 4;
-const WEEKDAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const WEEKDAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const hostElements = {
   form: document.querySelector("#host-form"),
   title: document.querySelector("#poll-title"),
@@ -82,7 +82,7 @@ function renderCalendars() {
     daysGrid.className = "calendar-days";
 
     const firstDayOfMonth = startOfMonth(monthDate);
-    const leadingBlankDays = firstDayOfMonth.getDay();
+    const leadingBlankDays = (firstDayOfMonth.getDay() + 6) % 7;
     for (let blank = 0; blank < leadingBlankDays; blank += 1) {
       const spacer = document.createElement("span");
       spacer.className = "calendar-spacer";
