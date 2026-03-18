@@ -53,29 +53,28 @@ function renderRankingList() {
     const unavailable = fragment.querySelector(".unavailable-toggle");
 
     item.dataset.dateId = date.id;
-    label.textContent = voteApi.formatDate(date.value);
+    label.textContent = formatVoteDate(date.value);
     unavailable.addEventListener("change", () => {
       item.classList.toggle("ranking-item-unavailable", unavailable.checked);
-      refreshRankingPositions();
     });
 
     wireDragAndDrop(item);
     voteElements.rankingList.append(fragment);
   });
-
-  refreshRankingPositions();
 }
 
 function wireDragAndDrop(item) {
   item.addEventListener("dragstart", () => {
     draggedItem = item;
     item.classList.add("dragging");
+    voteElements.rankingList.classList.add("ranking-list-sorting");
   });
 
   item.addEventListener("dragend", () => {
     draggedItem = null;
     item.classList.remove("dragging");
-    refreshRankingPositions();
+    clearDropTargets();
+    voteElements.rankingList.classList.remove("ranking-list-sorting");
   });
 
   item.addEventListener("dragover", (event) => {
@@ -86,26 +85,57 @@ function wireDragAndDrop(item) {
 
     const rect = item.getBoundingClientRect();
     const shouldInsertBefore = event.clientY < rect.top + rect.height / 2;
-    voteElements.rankingList.insertBefore(
-      draggedItem,
-      shouldInsertBefore ? item : item.nextSibling
+    clearDropTargets();
+    item.classList.add(shouldInsertBefore ? "drop-target-before" : "drop-target-after");
+    animateReorder(() => {
+      voteElements.rankingList.insertBefore(
+        draggedItem,
+        shouldInsertBefore ? item : item.nextSibling
+      );
+    });
+  });
+
+  item.addEventListener("dragleave", (event) => {
+    if (!item.contains(event.relatedTarget)) {
+      item.classList.remove("drop-target-before", "drop-target-after");
+    }
+  });
+}
+
+function animateReorder(mutateDom) {
+  const items = [...voteElements.rankingList.children];
+  const firstRects = new Map(items.map((entry) => [entry, entry.getBoundingClientRect()]));
+
+  mutateDom();
+
+  [...voteElements.rankingList.children].forEach((entry) => {
+    const firstRect = firstRects.get(entry);
+    if (!firstRect) {
+      return;
+    }
+
+    const lastRect = entry.getBoundingClientRect();
+    const deltaY = firstRect.top - lastRect.top;
+    if (deltaY === 0) {
+      return;
+    }
+
+    entry.animate(
+      [
+        { transform: `translateY(${deltaY}px)` },
+        { transform: "translateY(0)" },
+      ],
+      {
+        duration: 220,
+        easing: "cubic-bezier(0.22, 1, 0.36, 1)",
+      }
     );
   });
 }
 
-function refreshRankingPositions() {
-  let availableIndex = 0;
-
-  [...voteElements.rankingList.children].forEach((item) => {
-    const checkbox = item.querySelector(".unavailable-toggle");
-    const position = item.querySelector(".ranking-position");
-    if (checkbox.checked) {
-      position.textContent = "Unavailable";
-      return;
-    }
-
-    availableIndex += 1;
-    position.textContent = `Preference ${availableIndex}`;
+function clearDropTargets() {
+  [...voteElements.rankingList.children].forEach((entry) => {
+    entry.classList.remove("drop-target-before", "drop-target-after");
   });
 }
 
@@ -146,4 +176,13 @@ async function submitVote(event) {
   } catch (error) {
     window.alert(error.message);
   }
+}
+
+function formatVoteDate(value) {
+  const date = new Date(`${value}T00:00:00`);
+  return new Intl.DateTimeFormat(undefined, {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+  }).format(date);
 }

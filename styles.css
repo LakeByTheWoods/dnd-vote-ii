@@ -365,30 +365,76 @@ button.danger {
   gap: 0.85rem;
 }
 
+.ranking-list-sorting .ranking-item:not(.dragging) {
+  transition:
+    transform 220ms cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 180ms ease,
+    border-color 180ms ease,
+    background 180ms ease;
+}
+
 .ranking-item {
+  position: relative;
   display: flex;
   justify-content: space-between;
   align-items: center;
+  flex-wrap: nowrap;
   gap: 1rem;
   padding: 1rem;
   border-radius: 18px;
   background: rgba(255, 255, 255, 0.76);
   border: 1px solid rgba(113, 82, 52, 0.14);
   cursor: grab;
+  transition:
+    transform 180ms ease,
+    box-shadow 180ms ease,
+    border-color 180ms ease,
+    background 180ms ease;
 }
 
 .ranking-item.dragging {
-  opacity: 0.55;
+  opacity: 0.45;
+  transform: rotate(-1.5deg) scale(1.02);
+  box-shadow: 0 22px 40px rgba(80, 53, 20, 0.2);
+  border-color: rgba(145, 74, 39, 0.35);
+  background: rgba(255, 248, 238, 0.96);
 }
 
 .ranking-item-unavailable {
   background: rgba(141, 47, 47, 0.08);
 }
 
-.ranking-position {
-  margin: 0 0 0.35rem;
-  color: var(--muted);
-  font-size: 0.92rem;
+.ranking-item.drop-target-before::before,
+.ranking-item.drop-target-after::after {
+  content: "";
+  position: absolute;
+  left: 0.9rem;
+  right: 0.9rem;
+  height: 4px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(145, 74, 39, 0.25), rgba(145, 74, 39, 0.95));
+  pointer-events: none;
+}
+
+.ranking-item.drop-target-before::before {
+  top: -0.45rem;
+}
+
+.ranking-item.drop-target-after::after {
+  bottom: -0.45rem;
+}
+
+.ranking-copy {
+  flex: 1;
+  min-width: 0;
+}
+
+.ranking-affordance {
+  flex: 0 0 auto;
+  color: rgba(112, 88, 69, 0.7);
+  letter-spacing: 0.08em;
+  font-weight: 700;
+  user-select: none;
 }
 
 .checkbox-field {
@@ -453,8 +499,7 @@ th {
   }
 
   .saved-poll,
-  .vote-item,
-  .ranking-item {
+  .vote-item {
     flex-direction: column;
     align-items: flex-start;
   }
@@ -465,5 +510,15 @@ th {
 
   .calendar-grid {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 560px) {
+  .ranking-item {
+    flex-wrap: wrap;
+  }
+
+  .ranking-copy {
+    min-width: min(100%, 14rem);
   }
 }
