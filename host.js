@@ -1,10 +1,14 @@
 const hostApi = window.DndVoteApp;
+const MONTHS_PER_VIEW = 4;
+const WEEKDAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const hostElements = {
   form: document.querySelector("#host-form"),
   title: document.querySelector("#poll-title"),
-  dateInputs: document.querySelector("#date-inputs"),
-  dateTemplate: document.querySelector("#date-input-template"),
-  addDate: document.querySelector("#add-date"),
+  calendarGrid: document.querySelector("#calendar-grid"),
+  prevMonths: document.querySelector("#prev-months"),
+  nextMonths: document.querySelector("#next-months"),
+  selectedDates: document.querySelector("#selected-dates"),
+  clearSelectedDates: document.querySelector("#clear-selected-dates"),
   loadSample: document.querySelector("#load-sample"),
   clearStorage: document.querySelector("#clear-storage"),
   shareEmpty: document.querySelector("#share-empty"),
@@ -19,11 +23,21 @@ const hostElements = {
 };
 
 let activePoll = null;
+let selectedDates = new Set();
+let visibleMonthStart = startOfMonth(new Date());
 
 void initializeHostPage();
 
 async function initializeHostPage() {
-  hostElements.addDate.addEventListener("click", () => addDateInput());
+  hostElements.prevMonths.addEventListener("click", () => {
+    visibleMonthStart = addMonths(visibleMonthStart, -MONTHS_PER_VIEW);
+    renderCalendars();
+  });
+  hostElements.nextMonths.addEventListener("click", () => {
+    visibleMonthStart = addMonths(visibleMonthStart, MONTHS_PER_VIEW);
+    renderCalendars();
+  });
+  hostElements.clearSelectedDates.addEventListener("click", clearSelectedDates);
   hostElements.loadSample.addEventListener("click", loadSampleDates);
   hostElements.clearStorage.addEventListener("click", () => {
     void clearAllPolls();
@@ -35,33 +49,126 @@ async function initializeHostPage() {
     button.addEventListener("click", () => copyFieldValue(button.dataset.copyTarget));
   });
 
-  addDateInput();
-  addDateInput();
+  renderCalendars();
+  renderSelectedDates();
   await renderSavedPolls();
 }
 
-function addDateInput(value = "") {
-  const fragment = hostElements.dateTemplate.content.cloneNode(true);
-  const row = fragment.querySelector(".date-input-row");
-  const input = fragment.querySelector(".date-input");
-  const removeButton = fragment.querySelector(".remove-date");
+function renderCalendars() {
+  hostElements.calendarGrid.innerHTML = "";
 
-  input.value = value;
-  removeButton.addEventListener("click", () => {
-    if (hostElements.dateInputs.children.length <= 1) {
-      input.value = "";
-      return;
+  for (let monthOffset = 0; monthOffset < MONTHS_PER_VIEW; monthOffset += 1) {
+    const monthDate = addMonths(visibleMonthStart, monthOffset);
+    const calendar = document.createElement("section");
+    calendar.className = "calendar-month";
+
+    const title = document.createElement("h3");
+    title.textContent = new Intl.DateTimeFormat(undefined, {
+      month: "long",
+      year: "numeric",
+    }).format(monthDate);
+    calendar.append(title);
+
+    const weekdays = document.createElement("div");
+    weekdays.className = "calendar-weekdays";
+    WEEKDAY_LABELS.forEach((label) => {
+      const weekday = document.createElement("span");
+      weekday.textContent = label;
+      weekdays.append(weekday);
+    });
+    calendar.append(weekdays);
+
+    const daysGrid = document.createElement("div");
+    daysGrid.className = "calendar-days";
+
+    const firstDayOfMonth = startOfMonth(monthDate);
+    const leadingBlankDays = firstDayOfMonth.getDay();
+    for (let blank = 0; blank < leadingBlankDays; blank += 1) {
+      const spacer = document.createElement("span");
+      spacer.className = "calendar-spacer";
+      daysGrid.append(spacer);
     }
-    row.remove();
-  });
 
-  hostElements.dateInputs.append(fragment);
+    const daysInMonth = getDaysInMonth(monthDate);
+    const todayKey = toDateKey(new Date());
+
+    for (let day = 1; day <= daysInMonth; day += 1) {
+      const cellDate = new Date(monthDate.getFullYear(), monthDate.getMonth(), day);
+      const dateKey = toDateKey(cellDate);
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "calendar-day";
+      button.textContent = String(day);
+      button.dataset.dateValue = dateKey;
+
+      const isPast = dateKey < todayKey;
+      if (selectedDates.has(dateKey)) {
+        button.classList.add("calendar-day-selected");
+      }
+      if (dateKey === todayKey) {
+        button.classList.add("calendar-day-today");
+      }
+      if (isPast) {
+        button.classList.add("calendar-day-past");
+        button.disabled = true;
+      } else {
+        button.addEventListener("click", () => toggleDateSelection(dateKey));
+      }
+
+      daysGrid.append(button);
+    }
+
+    calendar.append(daysGrid);
+    hostElements.calendarGrid.append(calendar);
+  }
+}
+
+function toggleDateSelection(dateKey) {
+  if (selectedDates.has(dateKey)) {
+    selectedDates.delete(dateKey);
+  } else {
+    selectedDates.add(dateKey);
+  }
+
+  renderCalendars();
+  renderSelectedDates();
+}
+
+function renderSelectedDates() {
+  const orderedDates = [...selectedDates].sort();
+  hostElements.selectedDates.innerHTML = "";
+  hostElements.selectedDates.classList.toggle("empty-selection", orderedDates.length === 0);
+
+  if (orderedDates.length === 0) {
+    hostElements.selectedDates.textContent = "Choose at least two days from the calendars above.";
+    return;
+  }
+
+  orderedDates.forEach((dateValue) => {
+    const chip = document.createElement("button");
+    chip.type = "button";
+    chip.className = "selected-date-chip";
+    chip.innerHTML = `
+      <span>${escapeHtml(hostApi.formatDate(dateValue))}</span>
+      <strong aria-hidden="true">x</strong>
+    `;
+    chip.addEventListener("click", () => toggleDateSelection(dateValue));
+    hostElements.selectedDates.append(chip);
+  });
+}
+
+function clearSelectedDates() {
+  selectedDates = new Set();
+  renderCalendars();
+  renderSelectedDates();
 }
 
 function loadSampleDates() {
   hostElements.title.value = "Waterdeep Campaign Night";
-  hostElements.dateInputs.innerHTML = "";
-  ["2026-03-25", "2026-03-27", "2026-03-29"].forEach((value) => addDateInput(value));
+  selectedDates = new Set(["2026-03-25", "2026-03-27", "2026-03-29"]);
+  visibleMonthStart = startOfMonth(new Date("2026-03-01T00:00:00"));
+  renderCalendars();
+  renderSelectedDates();
 }
 
 async function clearAllPolls() {
@@ -78,10 +185,11 @@ async function clearAllPolls() {
   }
 
   activePoll = null;
+  selectedDates = new Set();
+  visibleMonthStart = startOfMonth(new Date());
   hostElements.form.reset();
-  hostElements.dateInputs.innerHTML = "";
-  addDateInput();
-  addDateInput();
+  renderCalendars();
+  renderSelectedDates();
   renderShareCard();
   await renderSavedPolls();
 }
@@ -90,14 +198,10 @@ async function submitPoll(event) {
   event.preventDefault();
 
   const title = hostElements.title.value.trim();
-  const dateValues = [...hostElements.dateInputs.querySelectorAll(".date-input")]
-    .map((input) => input.value)
-    .filter(Boolean)
-    .filter((value, index, allValues) => allValues.indexOf(value) === index)
-    .sort();
+  const dateValues = [...selectedDates].sort();
 
   if (!title || dateValues.length < 2) {
-    window.alert("Please add a title and at least two unique dates.");
+    window.alert("Please add a title and select at least two unique dates.");
     return;
   }
 
@@ -192,6 +296,25 @@ function copyFieldValue(fieldId) {
   } catch {
     window.alert("Copy failed.");
   }
+}
+
+function startOfMonth(date) {
+  return new Date(date.getFullYear(), date.getMonth(), 1);
+}
+
+function addMonths(date, count) {
+  return new Date(date.getFullYear(), date.getMonth() + count, 1);
+}
+
+function getDaysInMonth(date) {
+  return new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
+}
+
+function toDateKey(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 function escapeHtml(value) {

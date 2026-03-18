@@ -187,6 +187,119 @@ button.danger {
   min-width: 0;
 }
 
+.calendar-toolbar {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.calendar-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.calendar-month {
+  padding: 1rem;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(113, 82, 52, 0.12);
+}
+
+.calendar-month h3 {
+  margin-bottom: 0.85rem;
+  font-size: 1.1rem;
+}
+
+.calendar-weekdays,
+.calendar-days {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 0.35rem;
+}
+
+.calendar-weekdays {
+  margin-bottom: 0.45rem;
+  color: var(--muted);
+  font-size: 0.82rem;
+  text-transform: uppercase;
+}
+
+.calendar-weekdays span,
+.calendar-spacer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2rem;
+}
+
+.calendar-day {
+  min-height: 2.8rem;
+  padding: 0.4rem;
+  border-radius: 12px;
+  background: rgba(243, 234, 223, 0.75);
+  border: 1px solid rgba(113, 82, 52, 0.08);
+}
+
+.calendar-day:hover {
+  background: #ead4bc;
+}
+
+.calendar-day-selected {
+  background: var(--primary);
+  color: #fff7ef;
+}
+
+.calendar-day-selected:hover {
+  background: var(--primary-strong);
+}
+
+.calendar-day-today {
+  box-shadow: inset 0 0 0 2px rgba(145, 74, 39, 0.35);
+}
+
+.calendar-day-past,
+.calendar-day:disabled {
+  opacity: 0.38;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.selected-dates-card {
+  display: grid;
+  gap: 0.75rem;
+  padding: 1rem;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.66);
+  border: 1px solid rgba(113, 82, 52, 0.12);
+}
+
+.selected-dates-header {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.selected-dates {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.selected-dates.empty-selection {
+  color: var(--muted);
+}
+
+.selected-date-chip {
+  gap: 0.5rem;
+  padding: 0.7rem 0.9rem;
+  border-radius: 999px;
+  background: rgba(145, 74, 39, 0.12);
+  color: var(--text);
+}
+
 .empty-state {
   padding: 1rem;
   border-radius: 18px;
@@ -348,5 +461,9 @@ th {
 
   .copy-row {
     flex-direction: column;
+  }
+
+  .calendar-grid {
+    grid-template-columns: 1fr;
   }
 }

@@ -38,12 +38,24 @@
 
             <div class="field">
               <span>Possible dates</span>
-              <div id="date-inputs" class="stack"></div>
+              <div class="calendar-toolbar">
+                <button type="button" id="prev-months">Earlier Months</button>
+                <button type="button" id="next-months">Later Months</button>
+              </div>
+              <div id="calendar-grid" class="calendar-grid"></div>
+              <div class="selected-dates-card">
+                <div class="selected-dates-header">
+                  <strong>Selected dates</strong>
+                  <button type="button" id="clear-selected-dates" class="danger">Clear Selected Dates</button>
+                </div>
+                <div id="selected-dates" class="selected-dates empty-selection">
+                  Choose at least two days from the calendars above.
+                </div>
+              </div>
               <div class="button-row">
-                <button type="button" id="add-date">Add Another Date</button>
                 <button type="button" id="load-sample">Load Sample</button>
               </div>
-              <small>Each date uses a calendar picker.</small>
+              <small>Click a day to add or remove it from the poll.</small>
             </div>
 
             <div class="button-row">
@@ -103,13 +115,6 @@
         </section>
       </main>
     </div>
-
-    <template id="date-input-template">
-      <div class="date-input-row">
-        <input type="date" class="date-input" required />
-        <button type="button" class="danger remove-date">Remove</button>
-      </div>
-    </template>
 
     <script src="./shared.js"></script>
     <script src="./host.js"></script>
