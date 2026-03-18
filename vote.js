@@ -63,6 +63,7 @@ function renderRankingList() {
     const unavailable = fragment.querySelector(".unavailable-toggle");
 
     item.dataset.dateId = date.id;
+    item.classList.add(getWeekdayClass(date.value));
     label.textContent = formatVoteDate(date.value);
     unavailable.addEventListener("change", () => {
       item.classList.toggle("ranking-item-unavailable", unavailable.checked);
@@ -271,9 +272,37 @@ async function submitVote(event) {
 
 function formatVoteDate(value) {
   const date = new Date(`${value}T00:00:00`);
-  return new Intl.DateTimeFormat(undefined, {
-    weekday: "long",
-    day: "numeric",
-    month: "long",
-  }).format(date);
+  const weekday = new Intl.DateTimeFormat(undefined, { weekday: "long" }).format(date);
+  const month = new Intl.DateTimeFormat(undefined, { month: "long" }).format(date);
+  const day = date.getDate();
+  return `${weekday} ${day}${getOrdinalSuffix(day)} ${month}`;
+}
+
+function getWeekdayClass(value) {
+  const weekday = new Date(`${value}T00:00:00`).getDay();
+  const classNames = [
+    "ranking-sunday",
+    "ranking-monday",
+    "ranking-tuesday",
+    "ranking-wednesday",
+    "ranking-thursday",
+    "ranking-friday",
+    "ranking-saturday",
+  ];
+  return classNames[weekday];
+}
+
+function getOrdinalSuffix(day) {
+  const remainder10 = day % 10;
+  const remainder100 = day % 100;
+  if (remainder10 === 1 && remainder100 !== 11) {
+    return "st";
+  }
+  if (remainder10 === 2 && remainder100 !== 12) {
+    return "nd";
+  }
+  if (remainder10 === 3 && remainder100 !== 13) {
+    return "rd";
+  }
+  return "th";
 }

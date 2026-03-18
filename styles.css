@@ -392,6 +392,34 @@ button.danger {
     background 180ms ease;
 }
 
+.ranking-monday {
+  background: linear-gradient(135deg, rgba(255, 236, 214, 0.95), rgba(255, 251, 245, 0.88));
+}
+
+.ranking-tuesday {
+  background: linear-gradient(135deg, rgba(255, 242, 204, 0.95), rgba(255, 251, 241, 0.88));
+}
+
+.ranking-wednesday {
+  background: linear-gradient(135deg, rgba(232, 246, 214, 0.95), rgba(248, 252, 242, 0.88));
+}
+
+.ranking-thursday {
+  background: linear-gradient(135deg, rgba(215, 242, 232, 0.95), rgba(241, 251, 247, 0.88));
+}
+
+.ranking-friday {
+  background: linear-gradient(135deg, rgba(220, 238, 252, 0.95), rgba(243, 249, 255, 0.88));
+}
+
+.ranking-saturday {
+  background: linear-gradient(135deg, rgba(233, 231, 252, 0.95), rgba(247, 245, 255, 0.88));
+}
+
+.ranking-sunday {
+  background: linear-gradient(135deg, rgba(252, 228, 238, 0.95), rgba(255, 245, 249, 0.88));
+}
+
 .ranking-item.dragging {
   opacity: 0.45;
   transform: rotate(-1.5deg) scale(1.02);
