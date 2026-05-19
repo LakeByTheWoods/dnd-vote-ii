@@ -19,6 +19,10 @@ Run locally:
 2. Open `http://localhost:8000` on the host machine
 3. Create polls from the host page and share the generated vote link
 
+Verify locally:
+1. Run `python scripts/verify.py`
+2. The command checks Python syntax, runs the Python behavior tests against a temporary SQLite database, and checks JavaScript syntax with `node --check` when Node.js is installed.
+
 Pages:
 - `/` or `/index.html` is the host page for creating polls
 - `/vote.html?poll=...` is the voter ballot
