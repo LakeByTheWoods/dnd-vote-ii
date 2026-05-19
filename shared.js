@@ -21,7 +21,10 @@
       method: "POST",
       body: JSON.stringify({ title, dates: dateValues }),
     });
-    return data.poll;
+    return {
+      ...data.poll,
+      managementToken: data.managementToken,
+    };
   }
 
   async function getPoll(pollId) {
@@ -34,8 +37,11 @@
     return data.polls;
   }
 
-  async function clearPolls() {
-    await apiRequest("/api/polls", { method: "DELETE" });
+  async function clearPolls(adminSecret) {
+    await apiRequest("/api/polls", {
+      method: "DELETE",
+      headers: { "X-DnD-Vote-Admin-Secret": adminSecret },
+    });
   }
 
   async function saveVote(pollId, vote) {
@@ -46,10 +52,13 @@
     return data.poll;
   }
 
-  async function deleteVote(pollId, voteId) {
+  async function deleteVote(pollId, voteId, managementToken) {
     const data = await apiRequest(
       `/api/polls/${encodeURIComponent(pollId)}/votes/${encodeURIComponent(voteId)}`,
-      { method: "DELETE" }
+      {
+        method: "DELETE",
+        headers: { "X-DnD-Vote-Management-Token": managementToken },
+      }
     );
     return data.poll;
   }
@@ -72,6 +81,10 @@
     return new URLSearchParams(window.location.search).get("poll");
   }
 
+  function getManagementTokenFromLocation() {
+    return new URLSearchParams(window.location.search).get("manage");
+  }
+
   function buildPageLink(fileName, pollId) {
     const url = new URL(window.location.href);
     if (url.pathname === "/" || url.pathname === "") {
@@ -90,6 +103,7 @@
     createPoll,
     formatDate,
     getAllPolls,
+    getManagementTokenFromLocation,
     getPoll,
     getPollIdFromLocation,
     getResults,

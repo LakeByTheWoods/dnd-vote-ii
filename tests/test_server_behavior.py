@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import gc
+import os
 import tempfile
 import unittest
 from datetime import date, timedelta
@@ -173,7 +174,9 @@ class ServerBehaviorTest(unittest.TestCase):
 
         self.original_data_dir = dnd_server.DATA_DIR
         self.original_db_path = dnd_server.DB_PATH
+        self.original_admin_secret = os.environ.get(dnd_server.ADMIN_SECRET_ENV)
         self.addCleanup(self.restore_database_paths)
+        self.addCleanup(self.restore_admin_secret)
 
         dnd_server.DATA_DIR = Path(self.temp_dir.name)
         dnd_server.DB_PATH = dnd_server.DATA_DIR / "dnd_vote.db"
@@ -190,6 +193,12 @@ class ServerBehaviorTest(unittest.TestCase):
     def restore_database_paths(self) -> None:
         dnd_server.DATA_DIR = self.original_data_dir
         dnd_server.DB_PATH = self.original_db_path
+
+    def restore_admin_secret(self) -> None:
+        if self.original_admin_secret is None:
+            os.environ.pop(dnd_server.ADMIN_SECRET_ENV, None)
+        else:
+            os.environ[dnd_server.ADMIN_SECRET_ENV] = self.original_admin_secret
 
     def stop_server(self) -> None:
         self.httpd.shutdown()
@@ -390,6 +399,16 @@ class ServerBehaviorTest(unittest.TestCase):
         )
         self.assertEqual(HTTPStatus.FORBIDDEN, invalid_secret.status)
         self.assertEqual({"error": "Admin secret is invalid."}, invalid_secret.payload)
+
+        os.environ[dnd_server.ADMIN_SECRET_ENV] = "test-admin-secret"
+        valid_secret = self.request(
+            "DELETE",
+            "/api/polls",
+            headers={"X-DnD-Vote-Admin-Secret": "test-admin-secret"},
+        )
+        self.assertEqual(HTTPStatus.OK, valid_secret.status)
+        self.assertEqual({"ok": True}, valid_secret.payload)
+        self.assertEqual([], self.request("GET", "/api/polls").payload["polls"])
 
     def test_results_api_counts_replaced_voter_name_as_one_current_ballot(self) -> None:
         poll = self.create_poll()

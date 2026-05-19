@@ -11,6 +11,7 @@ const resultsElements = {
 };
 
 const resultsPollId = resultsApi.getPollIdFromLocation();
+const resultsManagementToken = resultsApi.getManagementTokenFromLocation();
 let resultsPoll = null;
 
 void initializeResultsPage();
@@ -105,15 +106,19 @@ function renderResultsPage(talliedDates, winner) {
     editUrl.searchParams.set("voter", vote.voterName);
     editLink.href = editUrl.toString();
 
-    const deleteButton = document.createElement("button");
-    deleteButton.type = "button";
-    deleteButton.className = "danger";
-    deleteButton.textContent = "Delete Vote";
-    deleteButton.addEventListener("click", () => {
-      void handleDeleteVote(vote);
-    });
+    actions.append(editLink);
 
-    actions.append(editLink, deleteButton);
+    if (resultsManagementToken) {
+      const deleteButton = document.createElement("button");
+      deleteButton.type = "button";
+      deleteButton.className = "danger";
+      deleteButton.textContent = "Delete Vote";
+      deleteButton.addEventListener("click", () => {
+        void handleDeleteVote(vote);
+      });
+      actions.append(deleteButton);
+    }
+
     item.append(info, actions);
     resultsElements.votesList.append(item);
   });
@@ -133,7 +138,7 @@ async function handleDeleteVote(vote) {
       return;
     }
 
-    await resultsApi.deleteVote(resultsPollId, vote.id);
+    await resultsApi.deleteVote(resultsPollId, vote.id, resultsManagementToken);
     const refreshed = await resultsApi.getResults(resultsPollId);
     resultsPoll = refreshed.poll;
     renderResultsPage(refreshed.talliedDates, refreshed.winner);
