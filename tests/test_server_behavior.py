@@ -15,6 +15,150 @@ from urllib.request import Request, urlopen
 import server as dnd_server
 
 
+def poll_fixture(votes: list[dict], date_values: list[str] | None = None) -> dict:
+    dates = [
+        {"id": "date-a", "value": "2026-06-01"},
+        {"id": "date-b", "value": "2026-06-02"},
+        {"id": "date-c", "value": "2026-06-03"},
+    ]
+    if date_values is not None:
+        dates = [
+            {"id": f"date-{letter}", "value": value}
+            for letter, value in zip(("a", "b", "c", "d", "e"), date_values)
+        ]
+
+    return {
+        "id": "poll-1",
+        "title": "Campaign Night",
+        "createdAt": "2026-05-19T00:00:00+00:00",
+        "dates": dates,
+        "votes": votes,
+    }
+
+
+def vote_fixture(
+    voter_name: str,
+    rankings: list[str],
+    unavailable_date_ids: list[str] | None = None,
+) -> dict:
+    return {
+        "id": f"vote-{voter_name.lower()}",
+        "voterName": voter_name,
+        "createdAt": "2026-05-19T00:00:00+00:00",
+        "rankings": [
+            {"dateId": date_id, "position": position}
+            for position, date_id in enumerate(rankings, start=1)
+        ],
+        "unavailableDateIds": unavailable_date_ids or [],
+    }
+
+
+class TallyResultsTest(unittest.TestCase):
+    def test_ranked_pairs_selects_normal_head_to_head_winner(self) -> None:
+        poll = poll_fixture(
+            [
+                vote_fixture("Alice", ["date-a", "date-b", "date-c"]),
+                vote_fixture("Bob", ["date-a", "date-c", "date-b"]),
+                vote_fixture("Cara", ["date-b", "date-c", "date-a"]),
+            ]
+        )
+
+        tallied_dates = dnd_server.tally_results(poll)
+
+        self.assertEqual(["date-a", "date-b", "date-c"], [date["id"] for date in tallied_dates])
+        self.assertEqual(
+            ["2-0-0", "1-1-0", "0-2-0"],
+            [date["record"] for date in tallied_dates],
+        )
+        self.assertEqual([1, 2, 3], [date["rank"] for date in tallied_dates])
+
+    def test_ranked_pairs_skips_weak_cycle_closing_edge(self) -> None:
+        poll = poll_fixture(
+            [
+                vote_fixture("Alice", ["date-a", "date-b", "date-c"]),
+                vote_fixture("Bob", ["date-a", "date-b", "date-c"]),
+                vote_fixture("Cara", ["date-a", "date-b", "date-c"]),
+                vote_fixture("Dan", ["date-a", "date-b", "date-c"]),
+                vote_fixture("Eli", ["date-b", "date-c", "date-a"]),
+                vote_fixture("Fran", ["date-b", "date-c", "date-a"]),
+                vote_fixture("Gail", ["date-b", "date-c", "date-a"]),
+                vote_fixture("Hank", ["date-c", "date-a", "date-b"]),
+                vote_fixture("Ivy", ["date-c", "date-a", "date-b"]),
+            ],
+            date_values=["2026-06-03", "2026-06-01", "2026-06-02"],
+        )
+
+        tallied_dates = dnd_server.tally_results(poll)
+
+        self.assertEqual(["date-a", "date-b", "date-c"], [date["id"] for date in tallied_dates])
+        self.assertEqual([1, 2, 3], [date["rank"] for date in tallied_dates])
+        self.assertEqual(["1-1-0", "1-1-0", "1-1-0"], [date["record"] for date in tallied_dates])
+
+    def test_ranked_pairs_ties_are_reported_and_ordered_by_date(self) -> None:
+        poll = poll_fixture(
+            [
+                vote_fixture("Alice", ["date-a", "date-b"]),
+                vote_fixture("Bob", ["date-b", "date-a"]),
+            ],
+            date_values=["2026-06-02", "2026-06-01"],
+        )
+
+        tallied_dates = dnd_server.tally_results(poll)
+
+        self.assertEqual(["date-b", "date-a"], [date["id"] for date in tallied_dates])
+        self.assertEqual(["0-0-1", "0-0-1"], [date["record"] for date in tallied_dates])
+        self.assertEqual([1, 2], [date["rank"] for date in tallied_dates])
+
+    def test_one_eligible_date_wins_without_pairwise_comparisons(self) -> None:
+        poll = poll_fixture(
+            [
+                vote_fixture("Alice", ["date-a"], ["date-b", "date-c"]),
+                vote_fixture("Bob", ["date-a"], ["date-b"]),
+            ]
+        )
+
+        tallied_dates = dnd_server.tally_results(poll)
+
+        self.assertEqual("date-a", tallied_dates[0]["id"])
+        self.assertEqual(1, tallied_dates[0]["rank"])
+        self.assertEqual("0-0-0", tallied_dates[0]["record"])
+        self.assertFalse(tallied_dates[0]["disqualified"])
+        self.assertTrue(all(date["disqualified"] for date in tallied_dates[1:]))
+
+    def test_all_disqualified_dates_have_no_eligible_winner(self) -> None:
+        poll = poll_fixture(
+            [
+                vote_fixture("Alice", ["date-a"], ["date-b"]),
+                vote_fixture("Bob", ["date-b"], ["date-a"]),
+            ],
+            date_values=["2026-06-02", "2026-06-01"],
+        )
+
+        tallied_dates = dnd_server.tally_results(poll)
+
+        self.assertEqual(["date-b", "date-a"], [date["id"] for date in tallied_dates])
+        self.assertTrue(all(date["disqualified"] for date in tallied_dates))
+        self.assertEqual([None, None], [date["rank"] for date in tallied_dates])
+
+    def test_unavailable_dates_are_disqualified_before_head_to_head_tallying(self) -> None:
+        poll = poll_fixture(
+            [
+                vote_fixture("Alice", ["date-a", "date-b"], ["date-c"]),
+                vote_fixture("Bob", ["date-b", "date-a"], []),
+                vote_fixture("Cara", ["date-b", "date-a"], []),
+            ]
+        )
+
+        tallied_dates = dnd_server.tally_results(poll)
+
+        tallies_by_id = {date["id"]: date for date in tallied_dates}
+        self.assertEqual("date-b", tallied_dates[0]["id"])
+        self.assertEqual("1-0-0", tallies_by_id["date-b"]["record"])
+        self.assertEqual("0-1-0", tallies_by_id["date-a"]["record"])
+        self.assertTrue(tallies_by_id["date-c"]["disqualified"])
+        self.assertEqual(["Alice"], tallies_by_id["date-c"]["unavailableBy"])
+
+
 class ApiResponse:
     def __init__(self, status: int, payload: dict):
         self.status = status
@@ -140,6 +284,48 @@ class ServerBehaviorTest(unittest.TestCase):
         tallies_by_id = {entry["id"]: entry for entry in results["talliedDates"]}
         self.assertTrue(tallies_by_id[third]["disqualified"])
         self.assertEqual(["alice"], tallies_by_id[third]["unavailableBy"])
+
+    def test_results_api_counts_replaced_voter_name_as_one_current_ballot(self) -> None:
+        poll = self.create_poll()
+        first, second, third = [date["id"] for date in poll["dates"]]
+
+        first_vote_response = self.request(
+            "POST",
+            f"/api/polls/{poll['id']}/votes",
+            {
+                "voterName": "Morgan",
+                "rankings": [first, second, third],
+                "unavailableDateIds": [],
+            },
+        )
+        self.assertEqual(HTTPStatus.CREATED, first_vote_response.status)
+
+        replacement_response = self.request(
+            "POST",
+            f"/api/polls/{poll['id']}/votes",
+            {
+                "voterName": " morgan ",
+                "rankings": [second, first, third],
+                "unavailableDateIds": [],
+            },
+        )
+        self.assertEqual(HTTPStatus.CREATED, replacement_response.status)
+
+        results_response = self.request("GET", f"/api/polls/{poll['id']}/results")
+
+        self.assertEqual(HTTPStatus.OK, results_response.status)
+        self.assertEqual({"poll", "talliedDates", "winner"}, set(results_response.payload))
+        self.assertEqual(poll["id"], results_response.payload["poll"]["id"])
+        self.assertEqual(1, len(results_response.payload["poll"]["votes"]))
+        self.assertEqual(second, results_response.payload["winner"]["id"])
+
+        tallies_by_id = {
+            entry["id"]: entry
+            for entry in results_response.payload["talliedDates"]
+        }
+        self.assertEqual("2-0-0", tallies_by_id[second]["record"])
+        self.assertEqual("1-1-0", tallies_by_id[first]["record"])
+        self.assertEqual("0-2-0", tallies_by_id[third]["record"])
 
     def test_create_poll_validation_errors_are_predictable(self) -> None:
         date_values = self.future_date_values()
