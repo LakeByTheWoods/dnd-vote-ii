@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 import argparse
+from collections.abc import Iterator
+from contextlib import contextmanager
+from hmac import compare_digest
 import json
 import os
+import secrets
 import sqlite3
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -26,18 +30,33 @@ STATIC_FILES = {
     "/vote.js": ("vote.js", "application/javascript; charset=utf-8"),
     "/results.js": ("results.js", "application/javascript; charset=utf-8"),
 }
+MAX_REQUEST_BODY_BYTES = 8192
+MAX_POLL_TITLE_LENGTH = 120
+MAX_VOTER_NAME_LENGTH = 80
+MANAGEMENT_TOKEN_HEADER = "X-DnD-Vote-Management-Token"
+ADMIN_SECRET_HEADER = "X-DnD-Vote-Admin-Secret"
+ADMIN_SECRET_ENV = "DND_VOTE_ADMIN_SECRET"
 
 
 def utc_now_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
 
 
-def get_connection() -> sqlite3.Connection:
+@contextmanager
+def get_connection() -> Iterator[sqlite3.Connection]:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     connection = sqlite3.connect(DB_PATH)
     connection.row_factory = sqlite3.Row
     connection.execute("PRAGMA foreign_keys = ON")
-    return connection
+    try:
+        yield connection
+    except Exception:
+        connection.rollback()
+        raise
+    else:
+        connection.commit()
+    finally:
+        connection.close()
 
 
 def initialize_database() -> None:
@@ -47,7 +66,8 @@ def initialize_database() -> None:
             CREATE TABLE IF NOT EXISTS polls (
                 id TEXT PRIMARY KEY,
                 title TEXT NOT NULL,
-                created_at TEXT NOT NULL
+                created_at TEXT NOT NULL,
+                management_token TEXT NOT NULL
             );
 
             CREATE TABLE IF NOT EXISTS poll_dates (
@@ -80,6 +100,32 @@ def initialize_database() -> None:
             );
             """
         )
+        poll_columns = {
+            row["name"]
+            for row in connection.execute("PRAGMA table_info(polls)").fetchall()
+        }
+        if "management_token" not in poll_columns:
+            connection.execute("ALTER TABLE polls ADD COLUMN management_token TEXT")
+
+        rows_missing_tokens = connection.execute(
+            "SELECT id FROM polls WHERE management_token IS NULL OR management_token = ''"
+        ).fetchall()
+        for row in rows_missing_tokens:
+            connection.execute(
+                "UPDATE polls SET management_token = ? WHERE id = ?",
+                (generate_management_token(), row["id"]),
+            )
+
+        connection.execute(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS polls_management_token
+            ON polls (management_token)
+            """
+        )
+
+
+def generate_management_token() -> str:
+    return secrets.token_urlsafe(32)
 
 
 def fetch_poll(poll_id: str) -> dict | None:
@@ -186,22 +232,75 @@ def fetch_poll_summaries() -> list[dict]:
         ]
 
 
-def create_poll(title: str, date_values: list[str]) -> dict:
+def create_poll(title: str, date_values: list[str]) -> tuple[dict, str]:
     poll_id = str(uuid4())
     created_at = utc_now_iso()
+    management_token = generate_management_token()
     dates = [{"id": str(uuid4()), "value": value} for value in sorted(set(date_values))]
 
     with get_connection() as connection:
         connection.execute(
-            "INSERT INTO polls (id, title, created_at) VALUES (?, ?, ?)",
-            (poll_id, title, created_at),
+            "INSERT INTO polls (id, title, created_at, management_token) VALUES (?, ?, ?, ?)",
+            (poll_id, title, created_at, management_token),
         )
         connection.executemany(
             "INSERT INTO poll_dates (id, poll_id, date_value) VALUES (?, ?, ?)",
             [(date["id"], poll_id, date["value"]) for date in dates],
         )
 
-    return fetch_poll(poll_id)
+    poll = fetch_poll(poll_id)
+    if poll is None:
+        raise RuntimeError("Created poll could not be fetched.")
+    return poll, management_token
+
+
+def fetch_poll_management_token(poll_id: str) -> str | None:
+    with get_connection() as connection:
+        row = connection.execute(
+            "SELECT management_token FROM polls WHERE id = ?",
+            (poll_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        return row["management_token"]
+
+
+def management_token_matches(poll_id: str, candidate_token: str) -> bool:
+    expected_token = fetch_poll_management_token(poll_id)
+    if expected_token is None:
+        return False
+    return compare_digest(expected_token, candidate_token)
+
+
+def admin_secret_matches(candidate_secret: str) -> bool:
+    expected_secret = os.environ.get(ADMIN_SECRET_ENV, "")
+    if not expected_secret:
+        return False
+    return compare_digest(expected_secret, candidate_secret)
+
+
+def normalize_poll_dates(date_values: list) -> list[str]:
+    today = date.today()
+    cleaned_dates = []
+
+    for value in date_values:
+        date_value = str(value).strip()
+        if not date_value:
+            raise ValueError("Dates must use YYYY-MM-DD format.")
+        try:
+            parsed_date = date.fromisoformat(date_value)
+        except ValueError as error:
+            raise ValueError("Dates must use YYYY-MM-DD format.") from error
+        if parsed_date.isoformat() != date_value:
+            raise ValueError("Dates must use YYYY-MM-DD format.")
+        if parsed_date < today:
+            raise ValueError("Candidate dates must be today or later.")
+        cleaned_dates.append(date_value)
+
+    unique_dates = sorted(set(cleaned_dates))
+    if len(unique_dates) < 2:
+        raise ValueError("At least two unique dates are required.")
+    return unique_dates
 
 
 def replace_vote(
@@ -219,6 +318,8 @@ def replace_vote(
 
     if not clean_name:
         raise ValueError("Voter name is required.")
+    if len(clean_name) > MAX_VOTER_NAME_LENGTH:
+        raise ValueError(f"Voter name must be {MAX_VOTER_NAME_LENGTH} characters or fewer.")
     if not rankings:
         raise ValueError("At least one ranked date is required.")
     if len(rankings) != len(set(rankings)):
@@ -564,29 +665,43 @@ class AppHandler(BaseHTTPRequestHandler):
             if not title:
                 self.send_json({"error": "Title is required."}, status=HTTPStatus.BAD_REQUEST)
                 return
+            if len(title) > MAX_POLL_TITLE_LENGTH:
+                self.send_json(
+                    {"error": f"Title must be {MAX_POLL_TITLE_LENGTH} characters or fewer."},
+                    status=HTTPStatus.BAD_REQUEST,
+                )
+                return
             if not isinstance(date_values, list):
                 self.send_json({"error": "Dates must be an array."}, status=HTTPStatus.BAD_REQUEST)
                 return
 
-            cleaned_dates = sorted({str(value).strip() for value in date_values if str(value).strip()})
-            if len(cleaned_dates) < 2:
-                self.send_json(
-                    {"error": "At least two unique dates are required."},
-                    status=HTTPStatus.BAD_REQUEST,
-                )
+            try:
+                cleaned_dates = normalize_poll_dates(date_values)
+            except ValueError as error:
+                self.send_json({"error": str(error)}, status=HTTPStatus.BAD_REQUEST)
                 return
 
-            poll = create_poll(title, cleaned_dates)
-            self.send_json({"poll": poll}, status=HTTPStatus.CREATED)
+            poll, management_token = create_poll(title, cleaned_dates)
+            self.send_json(
+                {"poll": poll, "managementToken": management_token},
+                status=HTTPStatus.CREATED,
+            )
             return
 
         parts = [part for part in path.split("/") if part]
         if len(parts) == 4 and parts[1] == "polls" and parts[3] == "votes":
             rankings = payload.get("rankings", [])
             unavailable = payload.get("unavailableDateIds", [])
+            voter_name = payload.get("voterName", "")
             if not isinstance(rankings, list) or not isinstance(unavailable, list):
                 self.send_json(
                     {"error": "Rankings and unavailableDateIds must be arrays."},
+                    status=HTTPStatus.BAD_REQUEST,
+                )
+                return
+            if not isinstance(voter_name, str):
+                self.send_json(
+                    {"error": "Voter name must be a string."},
                     status=HTTPStatus.BAD_REQUEST,
                 )
                 return
@@ -594,7 +709,7 @@ class AppHandler(BaseHTTPRequestHandler):
             try:
                 poll = replace_vote(
                     parts[2],
-                    str(payload.get("voterName", "")),
+                    voter_name,
                     [str(item) for item in rankings],
                     [str(item) for item in unavailable],
                 )
@@ -613,6 +728,14 @@ class AppHandler(BaseHTTPRequestHandler):
 
     def handle_api_delete(self, path: str) -> None:
         if path == "/api/polls":
+            admin_secret = self.headers.get(ADMIN_SECRET_HEADER, "")
+            if not admin_secret:
+                self.send_json({"error": "Admin secret is required."}, status=HTTPStatus.FORBIDDEN)
+                return
+            if not admin_secret_matches(admin_secret):
+                self.send_json({"error": "Admin secret is invalid."}, status=HTTPStatus.FORBIDDEN)
+                return
+
             with get_connection() as connection:
                 connection.execute("DELETE FROM polls")
 
@@ -621,6 +744,20 @@ class AppHandler(BaseHTTPRequestHandler):
 
         parts = [part for part in path.split("/") if part]
         if len(parts) == 5 and parts[1] == "polls" and parts[3] == "votes":
+            management_token = self.headers.get(MANAGEMENT_TOKEN_HEADER, "")
+            if not management_token:
+                self.send_json(
+                    {"error": "Management token is required."},
+                    status=HTTPStatus.FORBIDDEN,
+                )
+                return
+            if not management_token_matches(parts[2], management_token):
+                self.send_json(
+                    {"error": "Management token is invalid."},
+                    status=HTTPStatus.FORBIDDEN,
+                )
+                return
+
             try:
                 poll = delete_vote(parts[2], parts[4])
             except ValueError as error:
@@ -638,6 +775,9 @@ class AppHandler(BaseHTTPRequestHandler):
 
     def read_json(self) -> dict:
         content_length = int(self.headers.get("Content-Length", "0"))
+        if content_length > MAX_REQUEST_BODY_BYTES:
+            self.discard_request_body(content_length)
+            raise ValueError(f"Request body must be {MAX_REQUEST_BODY_BYTES} bytes or fewer.")
         body = self.rfile.read(content_length) if content_length else b"{}"
         try:
             payload = json.loads(body.decode("utf-8"))
@@ -646,6 +786,14 @@ class AppHandler(BaseHTTPRequestHandler):
         if not isinstance(payload, dict):
             raise ValueError("Request body must be a JSON object.")
         return payload
+
+    def discard_request_body(self, content_length: int) -> None:
+        remaining = content_length
+        while remaining > 0:
+            chunk = self.rfile.read(min(remaining, 8192))
+            if not chunk:
+                break
+            remaining -= len(chunk)
 
     def send_json(self, payload: dict, status: HTTPStatus = HTTPStatus.OK) -> None:
         content = json.dumps(payload).encode("utf-8")
