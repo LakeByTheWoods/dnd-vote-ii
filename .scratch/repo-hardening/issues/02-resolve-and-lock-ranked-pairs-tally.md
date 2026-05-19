@@ -1,7 +1,8 @@
 ---
 title: Resolve and lock ranked-pairs tally
-status: ready-for-agent
+status: completed
 type: AFK
+completed_by: codex/repo-hardening/02-ranked-pairs
 ---
 
 ## Parent
