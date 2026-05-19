@@ -1,7 +1,8 @@
 ---
 title: Harden poll creation validation
-status: ready-for-agent
+status: completed
 type: AFK
+completed_by: codex/repo-hardening/03-poll-validation
 ---
 
 ## Parent
