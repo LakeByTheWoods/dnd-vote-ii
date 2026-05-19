@@ -46,7 +46,7 @@ function renderResultsPage(talliedDates, winner) {
   } submitted`;
   resultsElements.winnerLabel.textContent = winner ? resultsApi.formatDate(winner.value) : "No eligible date";
   resultsElements.winnerScore.textContent = winner
-    ? `${winner.record} head-to-head record`
+    ? `${winner.record} ranked-pairs head-to-head record`
     : "Every date has been disqualified.";
 
   resultsElements.tableBody.innerHTML = "";
