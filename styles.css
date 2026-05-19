@@ -169,6 +169,12 @@ button.primary:hover {
   background: var(--primary-strong);
 }
 
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+  transform: none;
+}
+
 button.danger {
   background: rgba(141, 47, 47, 0.12);
   color: var(--danger);
@@ -457,6 +463,20 @@ button.danger {
   min-width: 0;
 }
 
+.ranking-controls {
+  display: flex;
+  gap: 0.45rem;
+  flex: 0 0 auto;
+}
+
+.ranking-move {
+  min-width: 5.6rem;
+  padding: 0.58rem 0.7rem;
+  border: 1px solid rgba(113, 82, 52, 0.16);
+  background: rgba(255, 255, 255, 0.66);
+  font-weight: 700;
+}
+
 .ranking-affordance {
   flex: 0 0 auto;
   color: rgba(112, 88, 69, 0.7);
@@ -543,10 +563,30 @@ th {
 
 @media (max-width: 560px) {
   .ranking-item {
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: start;
   }
 
   .ranking-copy {
-    min-width: min(100%, 14rem);
+    min-width: 0;
+  }
+
+  .ranking-controls {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+
+  .ranking-move {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .ranking-affordance {
+    display: none;
+  }
+
+  .checkbox-field {
+    justify-content: flex-end;
   }
 }

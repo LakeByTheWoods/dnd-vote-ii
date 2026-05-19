@@ -1,7 +1,8 @@
 ---
 title: Add non-drag ranking controls
-status: ready-for-agent
+status: completed
 type: AFK
+completed_by: codex/repo-hardening/06-ranking-controls
 ---
 
 ## Parent
