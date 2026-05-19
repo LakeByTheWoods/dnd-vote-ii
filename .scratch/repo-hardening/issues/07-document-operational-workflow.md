@@ -1,6 +1,6 @@
 ---
 title: Document operational workflow
-status: ready-for-agent
+status: completed
 type: AFK
 ---
 
@@ -16,13 +16,13 @@ The documentation should describe the final hardened behavior rather than transi
 
 ## Acceptance criteria
 
-- [ ] Documentation explains the app's host, voter, and results flows.
-- [ ] Documentation explains ranked-pairs/head-to-head results at a high level.
-- [ ] Documentation includes the local run command and the local verification command.
-- [ ] Documentation describes SQLite data storage and the Railway volume environment variable.
-- [ ] Documentation describes host management capability and destructive-action protection.
-- [ ] Documentation does not describe geometric scoring as the current tally rule.
-- [ ] The verification command from Issue 01 passes.
+- [x] Documentation explains the app's host, voter, and results flows.
+- [x] Documentation explains ranked-pairs/head-to-head results at a high level.
+- [x] Documentation includes the local run command and the local verification command.
+- [x] Documentation describes SQLite data storage and the Railway volume environment variable.
+- [x] Documentation describes host management capability and destructive-action protection.
+- [x] Documentation does not describe geometric scoring as the current tally rule.
+- [x] The verification command from Issue 01 passes.
 
 ## Blocked by
 
