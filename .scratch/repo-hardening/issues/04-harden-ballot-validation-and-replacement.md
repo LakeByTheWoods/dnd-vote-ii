@@ -1,7 +1,8 @@
 ---
 title: Harden ballot validation and replacement
-status: ready-for-agent
+status: completed
 type: AFK
+completed_by: codex/repo-hardening/04-ballot-validation
 ---
 
 ## Parent
