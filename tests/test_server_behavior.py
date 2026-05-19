@@ -72,6 +72,28 @@ class TallyResultsTest(unittest.TestCase):
         )
         self.assertEqual([1, 2, 3], [date["rank"] for date in tallied_dates])
 
+    def test_ranked_pairs_skips_weak_cycle_closing_edge(self) -> None:
+        poll = poll_fixture(
+            [
+                vote_fixture("Alice", ["date-a", "date-b", "date-c"]),
+                vote_fixture("Bob", ["date-a", "date-b", "date-c"]),
+                vote_fixture("Cara", ["date-a", "date-b", "date-c"]),
+                vote_fixture("Dan", ["date-a", "date-b", "date-c"]),
+                vote_fixture("Eli", ["date-b", "date-c", "date-a"]),
+                vote_fixture("Fran", ["date-b", "date-c", "date-a"]),
+                vote_fixture("Gail", ["date-b", "date-c", "date-a"]),
+                vote_fixture("Hank", ["date-c", "date-a", "date-b"]),
+                vote_fixture("Ivy", ["date-c", "date-a", "date-b"]),
+            ],
+            date_values=["2026-06-03", "2026-06-01", "2026-06-02"],
+        )
+
+        tallied_dates = dnd_server.tally_results(poll)
+
+        self.assertEqual(["date-a", "date-b", "date-c"], [date["id"] for date in tallied_dates])
+        self.assertEqual([1, 2, 3], [date["rank"] for date in tallied_dates])
+        self.assertEqual(["1-1-0", "1-1-0", "1-1-0"], [date["record"] for date in tallied_dates])
+
     def test_ranked_pairs_ties_are_reported_and_ordered_by_date(self) -> None:
         poll = poll_fixture(
             [
