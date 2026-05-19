@@ -30,6 +30,7 @@ STATIC_FILES = {
 }
 MAX_REQUEST_BODY_BYTES = 8192
 MAX_POLL_TITLE_LENGTH = 120
+MAX_VOTER_NAME_LENGTH = 80
 
 
 def utc_now_iso() -> str:
@@ -256,6 +257,8 @@ def replace_vote(
 
     if not clean_name:
         raise ValueError("Voter name is required.")
+    if len(clean_name) > MAX_VOTER_NAME_LENGTH:
+        raise ValueError(f"Voter name must be {MAX_VOTER_NAME_LENGTH} characters or fewer.")
     if not rankings:
         raise ValueError("At least one ranked date is required.")
     if len(rankings) != len(set(rankings)):
