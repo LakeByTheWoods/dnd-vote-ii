@@ -8,7 +8,7 @@ How the app works:
    - a results link for anyone who should be able to watch the outcome;
    - a host management link that includes a private management token.
 3. Voters open `/vote.html?poll=...`, enter their name, rank the dates they can attend, and mark any dates they cannot attend as unavailable. Ranking can be changed with drag-and-drop or with the up/down controls.
-4. If the same voter name submits again for the same poll, the newer ballot replaces the older one after the browser asks for confirmation.
+4. If the same voter name submits again for the same poll, the browser labels the ballot as an edit and the newer submission replaces the older one.
 5. The results page at `/results.html?poll=...` shows submitted ballots, unavailable dates, the ranked-pairs winner, and the head-to-head comparison details.
 
 Tally rule:
