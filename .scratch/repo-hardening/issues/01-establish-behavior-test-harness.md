@@ -1,7 +1,8 @@
 ---
 title: Establish behavior test harness
-status: ready-for-agent
+status: completed
 type: AFK
+completed_by: codex/repo-hardening/01-test-harness
 ---
 
 ## Parent
