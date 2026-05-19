@@ -30,6 +30,7 @@ STATIC_FILES = {
 }
 MAX_REQUEST_BODY_BYTES = 8192
 MAX_POLL_TITLE_LENGTH = 120
+MAX_VOTER_NAME_LENGTH = 80
 
 
 def utc_now_iso() -> str:
@@ -256,6 +257,8 @@ def replace_vote(
 
     if not clean_name:
         raise ValueError("Voter name is required.")
+    if len(clean_name) > MAX_VOTER_NAME_LENGTH:
+        raise ValueError(f"Voter name must be {MAX_VOTER_NAME_LENGTH} characters or fewer.")
     if not rankings:
         raise ValueError("At least one ranked date is required.")
     if len(rankings) != len(set(rankings)):
@@ -625,9 +628,16 @@ class AppHandler(BaseHTTPRequestHandler):
         if len(parts) == 4 and parts[1] == "polls" and parts[3] == "votes":
             rankings = payload.get("rankings", [])
             unavailable = payload.get("unavailableDateIds", [])
+            voter_name = payload.get("voterName", "")
             if not isinstance(rankings, list) or not isinstance(unavailable, list):
                 self.send_json(
                     {"error": "Rankings and unavailableDateIds must be arrays."},
+                    status=HTTPStatus.BAD_REQUEST,
+                )
+                return
+            if not isinstance(voter_name, str):
+                self.send_json(
+                    {"error": "Voter name must be a string."},
                     status=HTTPStatus.BAD_REQUEST,
                 )
                 return
@@ -635,7 +645,7 @@ class AppHandler(BaseHTTPRequestHandler):
             try:
                 poll = replace_vote(
                     parts[2],
-                    str(payload.get("voterName", "")),
+                    voter_name,
                     [str(item) for item in rankings],
                     [str(item) for item in unavailable],
                 )

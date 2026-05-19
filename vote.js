@@ -8,6 +8,7 @@ const voteElements = {
   voteStatus: document.querySelector("#vote-status"),
   rankingList: document.querySelector("#ranking-list"),
   rankingTemplate: document.querySelector("#ranking-item-template"),
+  submitButton: document.querySelector("#submit-vote-button"),
   resultsCta: document.querySelector("#results-cta"),
 };
 
@@ -166,7 +167,8 @@ function applyExistingVote(voterName) {
   clearBallotSelection();
 
   if (!existingVote) {
-    renderVoteStatus("No existing ballot found for this name yet. You’re creating a new one.");
+    voteElements.submitButton.textContent = "Submit Vote";
+    renderVoteStatus("No existing ballot found for this name yet. You are creating a new ballot.");
     return;
   }
 
@@ -194,7 +196,8 @@ function applyExistingVote(voterName) {
     item.classList.add("ranking-item-unavailable");
   });
 
-  renderVoteStatus("Loaded your existing ballot. Drag items to update it, then submit again.");
+  voteElements.submitButton.textContent = "Update Ballot";
+  renderVoteStatus(`Editing existing ballot for ${existingVote.voterName}. Submitting will replace it.`);
 }
 
 function findVoteByName(voterName) {
@@ -217,6 +220,8 @@ function clearBallotSelection() {
       voteElements.rankingList.append(item);
     }
   });
+
+  voteElements.submitButton.textContent = "Submit Vote";
 }
 
 function renderVoteStatus(message) {

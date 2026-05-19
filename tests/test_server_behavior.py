@@ -428,6 +428,14 @@ class ServerBehaviorTest(unittest.TestCase):
         self.assertEqual(HTTPStatus.BAD_REQUEST, empty_name.status)
         self.assertEqual({"error": "Voter name is required."}, empty_name.payload)
 
+        oversized_name = self.request(
+            "POST",
+            f"/api/polls/{poll['id']}/votes",
+            {"voterName": "B" * 81, "rankings": [first], "unavailableDateIds": []},
+        )
+        self.assertEqual(HTTPStatus.BAD_REQUEST, oversized_name.status)
+        self.assertEqual({"error": "Voter name must be 80 characters or fewer."}, oversized_name.payload)
+
         duplicate_rankings = self.request(
             "POST",
             f"/api/polls/{poll['id']}/votes",
@@ -435,6 +443,14 @@ class ServerBehaviorTest(unittest.TestCase):
         )
         self.assertEqual(HTTPStatus.BAD_REQUEST, duplicate_rankings.status)
         self.assertEqual({"error": "Ranked dates must be unique."}, duplicate_rankings.payload)
+
+        duplicate_unavailable = self.request(
+            "POST",
+            f"/api/polls/{poll['id']}/votes",
+            {"voterName": "Bob", "rankings": [first], "unavailableDateIds": [second, second]},
+        )
+        self.assertEqual(HTTPStatus.BAD_REQUEST, duplicate_unavailable.status)
+        self.assertEqual({"error": "Unavailable dates must be unique."}, duplicate_unavailable.payload)
 
         contradictory_date = self.request(
             "POST",
@@ -451,6 +467,29 @@ class ServerBehaviorTest(unittest.TestCase):
         )
         self.assertEqual(HTTPStatus.BAD_REQUEST, unknown_date.status)
         self.assertEqual({"error": "Rankings include an unknown date."}, unknown_date.payload)
+
+        unknown_unavailable_date = self.request(
+            "POST",
+            f"/api/polls/{poll['id']}/votes",
+            {"voterName": "Bob", "rankings": [first], "unavailableDateIds": ["unknown-date-id"]},
+        )
+        self.assertEqual(HTTPStatus.BAD_REQUEST, unknown_unavailable_date.status)
+        self.assertEqual({"error": "Unavailable dates include an unknown date."}, unknown_unavailable_date.payload)
+
+    def test_vote_rejects_non_string_voter_names(self) -> None:
+        poll = self.create_poll()
+        first = poll["dates"][0]["id"]
+
+        for voter_name in (None, {"name": "Bob"}, ["Bob"], True, 42):
+            with self.subTest(voter_name=voter_name):
+                response = self.request(
+                    "POST",
+                    f"/api/polls/{poll['id']}/votes",
+                    {"voterName": voter_name, "rankings": [first], "unavailableDateIds": []},
+                )
+
+                self.assertEqual(HTTPStatus.BAD_REQUEST, response.status)
+                self.assertEqual({"error": "Voter name must be a string."}, response.payload)
 
 
 if __name__ == "__main__":
