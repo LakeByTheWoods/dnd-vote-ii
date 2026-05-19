@@ -476,6 +476,21 @@ class ServerBehaviorTest(unittest.TestCase):
         self.assertEqual(HTTPStatus.BAD_REQUEST, unknown_unavailable_date.status)
         self.assertEqual({"error": "Unavailable dates include an unknown date."}, unknown_unavailable_date.payload)
 
+    def test_vote_rejects_non_string_voter_names(self) -> None:
+        poll = self.create_poll()
+        first = poll["dates"][0]["id"]
+
+        for voter_name in (None, {"name": "Bob"}, ["Bob"], True, 42):
+            with self.subTest(voter_name=voter_name):
+                response = self.request(
+                    "POST",
+                    f"/api/polls/{poll['id']}/votes",
+                    {"voterName": voter_name, "rankings": [first], "unavailableDateIds": []},
+                )
+
+                self.assertEqual(HTTPStatus.BAD_REQUEST, response.status)
+                self.assertEqual({"error": "Voter name must be a string."}, response.payload)
+
 
 if __name__ == "__main__":
     unittest.main()

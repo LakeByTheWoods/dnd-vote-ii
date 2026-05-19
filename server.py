@@ -628,9 +628,16 @@ class AppHandler(BaseHTTPRequestHandler):
         if len(parts) == 4 and parts[1] == "polls" and parts[3] == "votes":
             rankings = payload.get("rankings", [])
             unavailable = payload.get("unavailableDateIds", [])
+            voter_name = payload.get("voterName", "")
             if not isinstance(rankings, list) or not isinstance(unavailable, list):
                 self.send_json(
                     {"error": "Rankings and unavailableDateIds must be arrays."},
+                    status=HTTPStatus.BAD_REQUEST,
+                )
+                return
+            if not isinstance(voter_name, str):
+                self.send_json(
+                    {"error": "Voter name must be a string."},
                     status=HTTPStatus.BAD_REQUEST,
                 )
                 return
@@ -638,7 +645,7 @@ class AppHandler(BaseHTTPRequestHandler):
             try:
                 poll = replace_vote(
                     parts[2],
-                    str(payload.get("voterName", "")),
+                    voter_name,
                     [str(item) for item in rankings],
                     [str(item) for item in unavailable],
                 )
