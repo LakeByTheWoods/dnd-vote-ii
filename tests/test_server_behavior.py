@@ -365,6 +365,18 @@ class ServerBehaviorTest(unittest.TestCase):
         self.assertEqual(HTTPStatus.BAD_REQUEST, past_date.status)
         self.assertEqual({"error": "Candidate dates must be today or later."}, past_date.payload)
 
+    def test_create_poll_rejects_blank_candidate_dates(self) -> None:
+        date_values = self.future_date_values()
+
+        blank_date = self.request(
+            "POST",
+            "/api/polls",
+            {"title": "Game", "dates": [date_values[0], "  ", date_values[1]]},
+        )
+
+        self.assertEqual(HTTPStatus.BAD_REQUEST, blank_date.status)
+        self.assertEqual({"error": "Dates must use YYYY-MM-DD format."}, blank_date.payload)
+
     def test_create_poll_rejects_oversized_title_and_request_body(self) -> None:
         date_values = self.future_date_values()
 

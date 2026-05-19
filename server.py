@@ -224,7 +224,7 @@ def normalize_poll_dates(date_values: list) -> list[str]:
     for value in date_values:
         date_value = str(value).strip()
         if not date_value:
-            continue
+            raise ValueError("Dates must use YYYY-MM-DD format.")
         try:
             parsed_date = date.fromisoformat(date_value)
         except ValueError as error:
