@@ -4,6 +4,7 @@ import json
 import gc
 import tempfile
 import unittest
+from datetime import date, timedelta
 from http import HTTPStatus
 from http.server import ThreadingHTTPServer
 from pathlib import Path
@@ -69,13 +70,18 @@ class ServerBehaviorTest(unittest.TestCase):
             finally:
                 error.close()
 
+    def future_date_values(self) -> list[str]:
+        base_date = date.today() + timedelta(days=30)
+        return [(base_date + timedelta(days=offset)).isoformat() for offset in (0, 2, 4)]
+
     def create_poll(self) -> dict:
+        date_values = self.future_date_values()
         response = self.request(
             "POST",
             "/api/polls",
             {
                 "title": "Waterdeep Campaign Night",
-                "dates": ["2026-06-05", "2026-06-01", "2026-06-03"],
+                "dates": [date_values[2], date_values[0], date_values[1]],
             },
         )
 
@@ -85,7 +91,7 @@ class ServerBehaviorTest(unittest.TestCase):
     def test_poll_vote_replacement_results_and_disqualification(self) -> None:
         poll = self.create_poll()
         self.assertEqual("Waterdeep Campaign Night", poll["title"])
-        self.assertEqual(["2026-06-01", "2026-06-03", "2026-06-05"], [date["value"] for date in poll["dates"]])
+        self.assertEqual(self.future_date_values(), [date["value"] for date in poll["dates"]])
         self.assertEqual([], poll["votes"])
 
         fetch_response = self.request("GET", f"/api/polls/{poll['id']}")
@@ -136,15 +142,17 @@ class ServerBehaviorTest(unittest.TestCase):
         self.assertEqual(["alice"], tallies_by_id[third]["unavailableBy"])
 
     def test_create_poll_validation_errors_are_predictable(self) -> None:
-        missing_title = self.request("POST", "/api/polls", {"title": " ", "dates": ["2026-06-01", "2026-06-02"]})
+        date_values = self.future_date_values()
+
+        missing_title = self.request("POST", "/api/polls", {"title": " ", "dates": date_values[:2]})
         self.assertEqual(HTTPStatus.BAD_REQUEST, missing_title.status)
         self.assertEqual({"error": "Title is required."}, missing_title.payload)
 
-        invalid_dates_type = self.request("POST", "/api/polls", {"title": "Game", "dates": "2026-06-01"})
+        invalid_dates_type = self.request("POST", "/api/polls", {"title": "Game", "dates": date_values[0]})
         self.assertEqual(HTTPStatus.BAD_REQUEST, invalid_dates_type.status)
         self.assertEqual({"error": "Dates must be an array."}, invalid_dates_type.payload)
 
-        too_few_dates = self.request("POST", "/api/polls", {"title": "Game", "dates": ["2026-06-01", "2026-06-01"]})
+        too_few_dates = self.request("POST", "/api/polls", {"title": "Game", "dates": [date_values[0], date_values[0]]})
         self.assertEqual(HTTPStatus.BAD_REQUEST, too_few_dates.status)
         self.assertEqual({"error": "At least two unique dates are required."}, too_few_dates.payload)
 
