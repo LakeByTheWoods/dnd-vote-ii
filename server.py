@@ -680,6 +680,7 @@ class AppHandler(BaseHTTPRequestHandler):
     def read_json(self) -> dict:
         content_length = int(self.headers.get("Content-Length", "0"))
         if content_length > MAX_REQUEST_BODY_BYTES:
+            self.discard_request_body(content_length)
             raise ValueError(f"Request body must be {MAX_REQUEST_BODY_BYTES} bytes or fewer.")
         body = self.rfile.read(content_length) if content_length else b"{}"
         try:
@@ -689,6 +690,14 @@ class AppHandler(BaseHTTPRequestHandler):
         if not isinstance(payload, dict):
             raise ValueError("Request body must be a JSON object.")
         return payload
+
+    def discard_request_body(self, content_length: int) -> None:
+        remaining = content_length
+        while remaining > 0:
+            chunk = self.rfile.read(min(remaining, 8192))
+            if not chunk:
+                break
+            remaining -= len(chunk)
 
     def send_json(self, payload: dict, status: HTTPStatus = HTTPStatus.OK) -> None:
         content = json.dumps(payload).encode("utf-8")
