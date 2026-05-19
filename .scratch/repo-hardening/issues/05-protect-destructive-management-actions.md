@@ -1,7 +1,8 @@
 ---
 title: Protect destructive management actions
-status: ready-for-agent
+status: completed
 type: AFK
+completed_by: codex/repo-hardening/05-management-actions
 ---
 
 ## Parent
