@@ -11,7 +11,7 @@
       <header class="hero">
         <h1>Rank Your Preferred Dates</h1>
         <p class="hero-copy">
-          Drag dates into your preferred order and mark any dates you absolutely
+          Move dates into your preferred order and mark any dates you absolutely
           cannot attend.
         </p>
       </header>
@@ -41,9 +41,9 @@
               <div id="vote-status" class="empty-state hidden"></div>
 
               <div class="field">
-                <span>Drag to rank your available dates</span>
+                <span>Rank your available dates</span>
                 <ul id="ranking-list" class="ranking-list"></ul>
-                <small>Top to bottom means first choice to last choice.</small>
+                <small>Top to bottom means first choice to last choice. Use the move buttons or drag dates.</small>
               </div>
 
               <div class="button-row">
@@ -60,6 +60,10 @@
       <li class="ranking-item" draggable="true">
         <div class="ranking-copy">
           <strong class="ranking-label"></strong>
+        </div>
+        <div class="ranking-controls" role="group">
+          <button type="button" class="ranking-move ranking-move-up">Move up</button>
+          <button type="button" class="ranking-move ranking-move-down">Move down</button>
         </div>
         <div class="ranking-affordance" aria-hidden="true">::</div>
         <label class="checkbox-field">

@@ -62,10 +62,24 @@ function renderRankingList() {
     const item = fragment.querySelector(".ranking-item");
     const label = fragment.querySelector(".ranking-label");
     const unavailable = fragment.querySelector(".unavailable-toggle");
+    const moveUp = fragment.querySelector(".ranking-move-up");
+    const moveDown = fragment.querySelector(".ranking-move-down");
 
     item.dataset.dateId = date.id;
     item.classList.add(getWeekdayClass(date.value));
     label.textContent = formatVoteDate(date.value);
+    item.querySelector(".ranking-controls").setAttribute(
+      "aria-label",
+      `Ranking controls for ${label.textContent}`
+    );
+    moveUp.setAttribute("aria-label", `Move ${label.textContent} up`);
+    moveDown.setAttribute("aria-label", `Move ${label.textContent} down`);
+    moveUp.addEventListener("click", () => {
+      moveRankingItem(item, -1);
+    });
+    moveDown.addEventListener("click", () => {
+      moveRankingItem(item, 1);
+    });
     unavailable.addEventListener("change", () => {
       item.classList.toggle("ranking-item-unavailable", unavailable.checked);
     });
@@ -73,6 +87,8 @@ function renderRankingList() {
     wireDragAndDrop(item);
     voteElements.rankingList.append(fragment);
   });
+
+  updateRankingControls();
 }
 
 function handleVoterLookup() {
@@ -116,12 +132,40 @@ function wireDragAndDrop(item) {
         shouldInsertBefore ? item : item.nextSibling
       );
     });
+    updateRankingControls();
   });
 
   item.addEventListener("dragleave", (event) => {
     if (!item.contains(event.relatedTarget)) {
       item.classList.remove("drop-target-before", "drop-target-after");
     }
+  });
+}
+
+function moveRankingItem(item, direction) {
+  const sibling = direction < 0 ? item.previousElementSibling : item.nextElementSibling;
+  if (!sibling) {
+    return;
+  }
+
+  animateReorder(() => {
+    if (direction < 0) {
+      voteElements.rankingList.insertBefore(item, sibling);
+      return;
+    }
+
+    voteElements.rankingList.insertBefore(sibling, item);
+  });
+  updateRankingControls();
+}
+
+function updateRankingControls() {
+  const items = [...voteElements.rankingList.children];
+  items.forEach((item, index) => {
+    const moveUp = item.querySelector(".ranking-move-up");
+    const moveDown = item.querySelector(".ranking-move-down");
+    moveUp.disabled = index === 0;
+    moveDown.disabled = index === items.length - 1;
   });
 }
 
@@ -185,6 +229,7 @@ function applyExistingVote(voterName) {
         voteElements.rankingList.append(item);
       }
     });
+  updateRankingControls();
 
   existingVote.unavailableDateIds.forEach((dateId) => {
     const item = itemsByDateId.get(dateId);
@@ -220,6 +265,7 @@ function clearBallotSelection() {
       voteElements.rankingList.append(item);
     }
   });
+  updateRankingControls();
 
   voteElements.submitButton.textContent = "Submit Vote";
 }
