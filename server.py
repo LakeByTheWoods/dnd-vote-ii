@@ -6,7 +6,7 @@ from contextlib import contextmanager
 import json
 import os
 import sqlite3
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -28,6 +28,8 @@ STATIC_FILES = {
     "/vote.js": ("vote.js", "application/javascript; charset=utf-8"),
     "/results.js": ("results.js", "application/javascript; charset=utf-8"),
 }
+MAX_REQUEST_BODY_BYTES = 8192
+MAX_POLL_TITLE_LENGTH = 120
 
 
 def utc_now_iso() -> str:
@@ -213,6 +215,30 @@ def create_poll(title: str, date_values: list[str]) -> dict:
         )
 
     return fetch_poll(poll_id)
+
+
+def normalize_poll_dates(date_values: list) -> list[str]:
+    today = date.today()
+    cleaned_dates = []
+
+    for value in date_values:
+        date_value = str(value).strip()
+        if not date_value:
+            raise ValueError("Dates must use YYYY-MM-DD format.")
+        try:
+            parsed_date = date.fromisoformat(date_value)
+        except ValueError as error:
+            raise ValueError("Dates must use YYYY-MM-DD format.") from error
+        if parsed_date.isoformat() != date_value:
+            raise ValueError("Dates must use YYYY-MM-DD format.")
+        if parsed_date < today:
+            raise ValueError("Candidate dates must be today or later.")
+        cleaned_dates.append(date_value)
+
+    unique_dates = sorted(set(cleaned_dates))
+    if len(unique_dates) < 2:
+        raise ValueError("At least two unique dates are required.")
+    return unique_dates
 
 
 def replace_vote(
@@ -575,16 +601,20 @@ class AppHandler(BaseHTTPRequestHandler):
             if not title:
                 self.send_json({"error": "Title is required."}, status=HTTPStatus.BAD_REQUEST)
                 return
+            if len(title) > MAX_POLL_TITLE_LENGTH:
+                self.send_json(
+                    {"error": f"Title must be {MAX_POLL_TITLE_LENGTH} characters or fewer."},
+                    status=HTTPStatus.BAD_REQUEST,
+                )
+                return
             if not isinstance(date_values, list):
                 self.send_json({"error": "Dates must be an array."}, status=HTTPStatus.BAD_REQUEST)
                 return
 
-            cleaned_dates = sorted({str(value).strip() for value in date_values if str(value).strip()})
-            if len(cleaned_dates) < 2:
-                self.send_json(
-                    {"error": "At least two unique dates are required."},
-                    status=HTTPStatus.BAD_REQUEST,
-                )
+            try:
+                cleaned_dates = normalize_poll_dates(date_values)
+            except ValueError as error:
+                self.send_json({"error": str(error)}, status=HTTPStatus.BAD_REQUEST)
                 return
 
             poll = create_poll(title, cleaned_dates)
@@ -649,6 +679,9 @@ class AppHandler(BaseHTTPRequestHandler):
 
     def read_json(self) -> dict:
         content_length = int(self.headers.get("Content-Length", "0"))
+        if content_length > MAX_REQUEST_BODY_BYTES:
+            self.discard_request_body(content_length)
+            raise ValueError(f"Request body must be {MAX_REQUEST_BODY_BYTES} bytes or fewer.")
         body = self.rfile.read(content_length) if content_length else b"{}"
         try:
             payload = json.loads(body.decode("utf-8"))
@@ -657,6 +690,14 @@ class AppHandler(BaseHTTPRequestHandler):
         if not isinstance(payload, dict):
             raise ValueError("Request body must be a JSON object.")
         return payload
+
+    def discard_request_body(self, content_length: int) -> None:
+        remaining = content_length
+        while remaining > 0:
+            chunk = self.rfile.read(min(remaining, 8192))
+            if not chunk:
+                break
+            remaining -= len(chunk)
 
     def send_json(self, payload: dict, status: HTTPStatus = HTTPStatus.OK) -> None:
         content = json.dumps(payload).encode("utf-8")

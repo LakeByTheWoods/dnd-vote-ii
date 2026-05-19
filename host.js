@@ -165,8 +165,10 @@ function clearSelectedDates() {
 
 function loadSampleDates() {
   hostElements.title.value = "Waterdeep Campaign Night";
-  selectedDates = new Set(["2026-03-25", "2026-03-27", "2026-03-29"]);
-  visibleMonthStart = startOfMonth(new Date("2026-03-01T00:00:00"));
+  const today = new Date();
+  const sampleDates = [7, 9, 11].map((dayOffset) => toDateKey(addDays(today, dayOffset)));
+  selectedDates = new Set(sampleDates);
+  visibleMonthStart = startOfMonth(addDays(today, 7));
   renderCalendars();
   renderSelectedDates();
 }
@@ -202,6 +204,10 @@ async function submitPoll(event) {
 
   if (!title || dateValues.length < 2) {
     window.alert("Please add a title and select at least two unique dates.");
+    return;
+  }
+  if (title.length > 120) {
+    window.alert("Please keep the poll title to 120 characters or fewer.");
     return;
   }
 
@@ -304,6 +310,10 @@ function startOfMonth(date) {
 
 function addMonths(date, count) {
   return new Date(date.getFullYear(), date.getMonth() + count, 1);
+}
+
+function addDays(date, count) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate() + count);
 }
 
 function getDaysInMonth(date) {

@@ -198,6 +198,9 @@ class ServerBehaviorTest(unittest.TestCase):
 
     def request(self, method: str, path: str, payload: dict | None = None) -> ApiResponse:
         body = None if payload is None else json.dumps(payload).encode("utf-8")
+        return self.raw_request(method, path, body)
+
+    def raw_request(self, method: str, path: str, body: bytes | None = None) -> ApiResponse:
         request = Request(
             f"{self.base_url}{path}",
             data=body,
@@ -341,6 +344,69 @@ class ServerBehaviorTest(unittest.TestCase):
         too_few_dates = self.request("POST", "/api/polls", {"title": "Game", "dates": [date_values[0], date_values[0]]})
         self.assertEqual(HTTPStatus.BAD_REQUEST, too_few_dates.status)
         self.assertEqual({"error": "At least two unique dates are required."}, too_few_dates.payload)
+
+    def test_create_poll_rejects_invalid_and_past_dates(self) -> None:
+        date_values = self.future_date_values()
+        yesterday = (date.today() - timedelta(days=1)).isoformat()
+
+        invalid_date = self.request(
+            "POST",
+            "/api/polls",
+            {"title": "Game", "dates": [date_values[0], "not-a-date"]},
+        )
+        self.assertEqual(HTTPStatus.BAD_REQUEST, invalid_date.status)
+        self.assertEqual({"error": "Dates must use YYYY-MM-DD format."}, invalid_date.payload)
+
+        past_date = self.request(
+            "POST",
+            "/api/polls",
+            {"title": "Game", "dates": [date_values[0], yesterday]},
+        )
+        self.assertEqual(HTTPStatus.BAD_REQUEST, past_date.status)
+        self.assertEqual({"error": "Candidate dates must be today or later."}, past_date.payload)
+
+    def test_create_poll_rejects_blank_candidate_dates(self) -> None:
+        date_values = self.future_date_values()
+
+        blank_date = self.request(
+            "POST",
+            "/api/polls",
+            {"title": "Game", "dates": [date_values[0], "  ", date_values[1]]},
+        )
+
+        self.assertEqual(HTTPStatus.BAD_REQUEST, blank_date.status)
+        self.assertEqual({"error": "Dates must use YYYY-MM-DD format."}, blank_date.payload)
+
+    def test_create_poll_rejects_oversized_title_and_request_body(self) -> None:
+        date_values = self.future_date_values()
+
+        oversized_title = self.request(
+            "POST",
+            "/api/polls",
+            {"title": "G" * 121, "dates": date_values[:2]},
+        )
+        self.assertEqual(HTTPStatus.BAD_REQUEST, oversized_title.status)
+        self.assertEqual({"error": "Title must be 120 characters or fewer."}, oversized_title.payload)
+
+        oversized_body = self.raw_request("POST", "/api/polls", b"{" + (b" " * 9000) + b"}")
+        self.assertEqual(HTTPStatus.BAD_REQUEST, oversized_body.status)
+        self.assertEqual({"error": "Request body must be 8192 bytes or fewer."}, oversized_body.payload)
+
+    def test_create_poll_accepts_upcoming_dates_and_normalizes_duplicates(self) -> None:
+        date_values = self.future_date_values()
+
+        response = self.request(
+            "POST",
+            "/api/polls",
+            {
+                "title": " Game ",
+                "dates": [date_values[1], date_values[0], date_values[1], f" {date_values[0]} "],
+            },
+        )
+
+        self.assertEqual(HTTPStatus.CREATED, response.status)
+        self.assertEqual("Game", response.payload["poll"]["title"])
+        self.assertEqual(date_values[:2], [date["value"] for date in response.payload["poll"]["dates"]])
 
     def test_vote_validation_errors_are_predictable(self) -> None:
         poll = self.create_poll()
