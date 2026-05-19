@@ -3,8 +3,10 @@ from __future__ import annotations
 import argparse
 from collections.abc import Iterator
 from contextlib import contextmanager
+from hmac import compare_digest
 import json
 import os
+import secrets
 import sqlite3
 from datetime import date, datetime, timezone
 from http import HTTPStatus
@@ -31,6 +33,9 @@ STATIC_FILES = {
 MAX_REQUEST_BODY_BYTES = 8192
 MAX_POLL_TITLE_LENGTH = 120
 MAX_VOTER_NAME_LENGTH = 80
+MANAGEMENT_TOKEN_HEADER = "X-DnD-Vote-Management-Token"
+ADMIN_SECRET_HEADER = "X-DnD-Vote-Admin-Secret"
+ADMIN_SECRET_ENV = "DND_VOTE_ADMIN_SECRET"
 
 
 def utc_now_iso() -> str:
@@ -61,7 +66,8 @@ def initialize_database() -> None:
             CREATE TABLE IF NOT EXISTS polls (
                 id TEXT PRIMARY KEY,
                 title TEXT NOT NULL,
-                created_at TEXT NOT NULL
+                created_at TEXT NOT NULL,
+                management_token TEXT NOT NULL
             );
 
             CREATE TABLE IF NOT EXISTS poll_dates (
@@ -94,6 +100,32 @@ def initialize_database() -> None:
             );
             """
         )
+        poll_columns = {
+            row["name"]
+            for row in connection.execute("PRAGMA table_info(polls)").fetchall()
+        }
+        if "management_token" not in poll_columns:
+            connection.execute("ALTER TABLE polls ADD COLUMN management_token TEXT")
+
+        rows_missing_tokens = connection.execute(
+            "SELECT id FROM polls WHERE management_token IS NULL OR management_token = ''"
+        ).fetchall()
+        for row in rows_missing_tokens:
+            connection.execute(
+                "UPDATE polls SET management_token = ? WHERE id = ?",
+                (generate_management_token(), row["id"]),
+            )
+
+        connection.execute(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS polls_management_token
+            ON polls (management_token)
+            """
+        )
+
+
+def generate_management_token() -> str:
+    return secrets.token_urlsafe(32)
 
 
 def fetch_poll(poll_id: str) -> dict | None:
@@ -200,22 +232,51 @@ def fetch_poll_summaries() -> list[dict]:
         ]
 
 
-def create_poll(title: str, date_values: list[str]) -> dict:
+def create_poll(title: str, date_values: list[str]) -> tuple[dict, str]:
     poll_id = str(uuid4())
     created_at = utc_now_iso()
+    management_token = generate_management_token()
     dates = [{"id": str(uuid4()), "value": value} for value in sorted(set(date_values))]
 
     with get_connection() as connection:
         connection.execute(
-            "INSERT INTO polls (id, title, created_at) VALUES (?, ?, ?)",
-            (poll_id, title, created_at),
+            "INSERT INTO polls (id, title, created_at, management_token) VALUES (?, ?, ?, ?)",
+            (poll_id, title, created_at, management_token),
         )
         connection.executemany(
             "INSERT INTO poll_dates (id, poll_id, date_value) VALUES (?, ?, ?)",
             [(date["id"], poll_id, date["value"]) for date in dates],
         )
 
-    return fetch_poll(poll_id)
+    poll = fetch_poll(poll_id)
+    if poll is None:
+        raise RuntimeError("Created poll could not be fetched.")
+    return poll, management_token
+
+
+def fetch_poll_management_token(poll_id: str) -> str | None:
+    with get_connection() as connection:
+        row = connection.execute(
+            "SELECT management_token FROM polls WHERE id = ?",
+            (poll_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        return row["management_token"]
+
+
+def management_token_matches(poll_id: str, candidate_token: str) -> bool:
+    expected_token = fetch_poll_management_token(poll_id)
+    if expected_token is None:
+        return False
+    return compare_digest(expected_token, candidate_token)
+
+
+def admin_secret_matches(candidate_secret: str) -> bool:
+    expected_secret = os.environ.get(ADMIN_SECRET_ENV, "")
+    if not expected_secret:
+        return False
+    return compare_digest(expected_secret, candidate_secret)
 
 
 def normalize_poll_dates(date_values: list) -> list[str]:
@@ -620,8 +681,11 @@ class AppHandler(BaseHTTPRequestHandler):
                 self.send_json({"error": str(error)}, status=HTTPStatus.BAD_REQUEST)
                 return
 
-            poll = create_poll(title, cleaned_dates)
-            self.send_json({"poll": poll}, status=HTTPStatus.CREATED)
+            poll, management_token = create_poll(title, cleaned_dates)
+            self.send_json(
+                {"poll": poll, "managementToken": management_token},
+                status=HTTPStatus.CREATED,
+            )
             return
 
         parts = [part for part in path.split("/") if part]
@@ -664,6 +728,14 @@ class AppHandler(BaseHTTPRequestHandler):
 
     def handle_api_delete(self, path: str) -> None:
         if path == "/api/polls":
+            admin_secret = self.headers.get(ADMIN_SECRET_HEADER, "")
+            if not admin_secret:
+                self.send_json({"error": "Admin secret is required."}, status=HTTPStatus.FORBIDDEN)
+                return
+            if not admin_secret_matches(admin_secret):
+                self.send_json({"error": "Admin secret is invalid."}, status=HTTPStatus.FORBIDDEN)
+                return
+
             with get_connection() as connection:
                 connection.execute("DELETE FROM polls")
 
@@ -672,6 +744,20 @@ class AppHandler(BaseHTTPRequestHandler):
 
         parts = [part for part in path.split("/") if part]
         if len(parts) == 5 and parts[1] == "polls" and parts[3] == "votes":
+            management_token = self.headers.get(MANAGEMENT_TOKEN_HEADER, "")
+            if not management_token:
+                self.send_json(
+                    {"error": "Management token is required."},
+                    status=HTTPStatus.FORBIDDEN,
+                )
+                return
+            if not management_token_matches(parts[2], management_token):
+                self.send_json(
+                    {"error": "Management token is invalid."},
+                    status=HTTPStatus.FORBIDDEN,
+                )
+                return
+
             try:
                 poll = delete_vote(parts[2], parts[4])
             except ValueError as error:

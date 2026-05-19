@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import gc
+import os
 import tempfile
 import unittest
 from datetime import date, timedelta
@@ -173,7 +174,9 @@ class ServerBehaviorTest(unittest.TestCase):
 
         self.original_data_dir = dnd_server.DATA_DIR
         self.original_db_path = dnd_server.DB_PATH
+        self.original_admin_secret = os.environ.get(dnd_server.ADMIN_SECRET_ENV)
         self.addCleanup(self.restore_database_paths)
+        self.addCleanup(self.restore_admin_secret)
 
         dnd_server.DATA_DIR = Path(self.temp_dir.name)
         dnd_server.DB_PATH = dnd_server.DATA_DIR / "dnd_vote.db"
@@ -191,21 +194,39 @@ class ServerBehaviorTest(unittest.TestCase):
         dnd_server.DATA_DIR = self.original_data_dir
         dnd_server.DB_PATH = self.original_db_path
 
+    def restore_admin_secret(self) -> None:
+        if self.original_admin_secret is None:
+            os.environ.pop(dnd_server.ADMIN_SECRET_ENV, None)
+        else:
+            os.environ[dnd_server.ADMIN_SECRET_ENV] = self.original_admin_secret
+
     def stop_server(self) -> None:
         self.httpd.shutdown()
         self.thread.join(timeout=5)
         self.httpd.server_close()
 
-    def request(self, method: str, path: str, payload: dict | None = None) -> ApiResponse:
+    def request(
+        self,
+        method: str,
+        path: str,
+        payload: dict | None = None,
+        headers: dict[str, str] | None = None,
+    ) -> ApiResponse:
         body = None if payload is None else json.dumps(payload).encode("utf-8")
-        return self.raw_request(method, path, body)
+        return self.raw_request(method, path, body, headers)
 
-    def raw_request(self, method: str, path: str, body: bytes | None = None) -> ApiResponse:
+    def raw_request(
+        self,
+        method: str,
+        path: str,
+        body: bytes | None = None,
+        headers: dict[str, str] | None = None,
+    ) -> ApiResponse:
         request = Request(
             f"{self.base_url}{path}",
             data=body,
             method=method,
-            headers={"Content-Type": "application/json"},
+            headers={"Content-Type": "application/json", **(headers or {})},
         )
 
         try:
@@ -234,6 +255,23 @@ class ServerBehaviorTest(unittest.TestCase):
 
         self.assertEqual(HTTPStatus.CREATED, response.status)
         return response.payload["poll"]
+
+    def create_managed_poll(self) -> dict:
+        date_values = self.future_date_values()
+        response = self.request(
+            "POST",
+            "/api/polls",
+            {
+                "title": "Waterdeep Campaign Night",
+                "dates": [date_values[2], date_values[0], date_values[1]],
+            },
+        )
+
+        self.assertEqual(HTTPStatus.CREATED, response.status)
+        self.assertIn("managementToken", response.payload)
+        self.assertIsInstance(response.payload["managementToken"], str)
+        self.assertGreaterEqual(len(response.payload["managementToken"]), 24)
+        return response.payload
 
     def test_poll_vote_replacement_results_and_disqualification(self) -> None:
         poll = self.create_poll()
@@ -287,6 +325,90 @@ class ServerBehaviorTest(unittest.TestCase):
         tallies_by_id = {entry["id"]: entry for entry in results["talliedDates"]}
         self.assertTrue(tallies_by_id[third]["disqualified"])
         self.assertEqual(["alice"], tallies_by_id[third]["unavailableBy"])
+
+    def test_poll_creation_returns_private_management_token_only_to_creator(self) -> None:
+        created = self.create_managed_poll()
+        poll = created["poll"]
+        management_token = created["managementToken"]
+
+        self.assertNotIn("managementToken", poll)
+
+        fetched_poll = self.request("GET", f"/api/polls/{poll['id']}")
+        self.assertEqual(HTTPStatus.OK, fetched_poll.status)
+        self.assertNotIn("managementToken", fetched_poll.payload["poll"])
+        self.assertNotIn(management_token, json.dumps(fetched_poll.payload))
+
+        results = self.request("GET", f"/api/polls/{poll['id']}/results")
+        self.assertEqual(HTTPStatus.OK, results.status)
+        self.assertNotIn(management_token, json.dumps(results.payload))
+
+    def test_delete_vote_requires_matching_poll_management_token(self) -> None:
+        created = self.create_managed_poll()
+        poll = created["poll"]
+        management_token = created["managementToken"]
+        wrong_poll = self.create_managed_poll()
+        first = poll["dates"][0]["id"]
+
+        vote_response = self.request(
+            "POST",
+            f"/api/polls/{poll['id']}/votes",
+            {"voterName": "Alice", "rankings": [first], "unavailableDateIds": []},
+        )
+        self.assertEqual(HTTPStatus.CREATED, vote_response.status)
+        vote_id = vote_response.payload["poll"]["votes"][0]["id"]
+
+        missing_token = self.request("DELETE", f"/api/polls/{poll['id']}/votes/{vote_id}")
+        self.assertEqual(HTTPStatus.FORBIDDEN, missing_token.status)
+        self.assertEqual({"error": "Management token is required."}, missing_token.payload)
+
+        invalid_token = self.request(
+            "DELETE",
+            f"/api/polls/{poll['id']}/votes/{vote_id}",
+            headers={"X-DnD-Vote-Management-Token": "not-the-token"},
+        )
+        self.assertEqual(HTTPStatus.FORBIDDEN, invalid_token.status)
+        self.assertEqual({"error": "Management token is invalid."}, invalid_token.payload)
+
+        wrong_poll_token = self.request(
+            "DELETE",
+            f"/api/polls/{poll['id']}/votes/{vote_id}",
+            headers={"X-DnD-Vote-Management-Token": wrong_poll["managementToken"]},
+        )
+        self.assertEqual(HTTPStatus.FORBIDDEN, wrong_poll_token.status)
+        self.assertEqual({"error": "Management token is invalid."}, wrong_poll_token.payload)
+
+        valid_token = self.request(
+            "DELETE",
+            f"/api/polls/{poll['id']}/votes/{vote_id}",
+            headers={"X-DnD-Vote-Management-Token": management_token},
+        )
+        self.assertEqual(HTTPStatus.OK, valid_token.status)
+        self.assertEqual([], valid_token.payload["poll"]["votes"])
+
+    def test_bulk_clear_requires_deployment_admin_secret(self) -> None:
+        self.create_poll()
+
+        missing_secret = self.request("DELETE", "/api/polls")
+        self.assertEqual(HTTPStatus.FORBIDDEN, missing_secret.status)
+        self.assertEqual({"error": "Admin secret is required."}, missing_secret.payload)
+
+        invalid_secret = self.request(
+            "DELETE",
+            "/api/polls",
+            headers={"X-DnD-Vote-Admin-Secret": "wrong-secret"},
+        )
+        self.assertEqual(HTTPStatus.FORBIDDEN, invalid_secret.status)
+        self.assertEqual({"error": "Admin secret is invalid."}, invalid_secret.payload)
+
+        os.environ[dnd_server.ADMIN_SECRET_ENV] = "test-admin-secret"
+        valid_secret = self.request(
+            "DELETE",
+            "/api/polls",
+            headers={"X-DnD-Vote-Admin-Secret": "test-admin-secret"},
+        )
+        self.assertEqual(HTTPStatus.OK, valid_secret.status)
+        self.assertEqual({"ok": True}, valid_secret.payload)
+        self.assertEqual([], self.request("GET", "/api/polls").payload["polls"])
 
     def test_results_api_counts_replaced_voter_name_as_one_current_ballot(self) -> None:
         poll = self.create_poll()

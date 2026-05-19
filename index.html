@@ -60,7 +60,6 @@
 
             <div class="button-row">
               <button type="submit" class="primary">Create Poll</button>
-              <button type="button" id="clear-storage" class="danger">Clear All Polls</button>
             </div>
           </form>
         </section>
@@ -98,9 +97,18 @@
               </div>
             </label>
 
+            <label class="field">
+              <span>Host management link</span>
+              <div class="copy-row">
+                <input id="management-link" readonly />
+                <button type="button" data-copy-target="management-link">Copy</button>
+              </div>
+            </label>
+
             <div class="link-actions">
               <a id="open-vote-link" class="button-link" href="./vote.html">Open Voting Page</a>
               <a id="open-results-link" class="button-link" href="./results.html">Open Results Page</a>
+              <a id="open-management-link" class="button-link" href="./results.html">Manage Votes</a>
             </div>
           </div>
         </section>
