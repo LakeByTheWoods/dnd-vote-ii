@@ -1,4 +1,4 @@
-DnD Vote is a small web app for choosing a Dungeons and Dragons session date with a friend group. It runs as a Python standard-library web server with static HTML, CSS, and JavaScript pages, and stores poll data in SQLite.
+DnD Vote is a small web app for choosing a Dungeons and Dragons session date with a friend group. The supported backend is the Go server in `cmd/dnd-vote`; it serves the static HTML, CSS, and JavaScript files and stores poll data in SQLite.
 
 How the app works:
 
@@ -19,39 +19,47 @@ Any date marked unavailable by any voter is disqualified before tallying. The re
 
 This means the result is based on pairwise preference strength between eligible dates. The results page also shows each eligible date's head-to-head record so the outcome can be explained without reading the source code.
 
+Local install:
+
+1. Install Go 1.23 or newer.
+2. Install Python 3 if you want to use the repository verification helper.
+3. Install Node.js if you want JavaScript syntax checks to run locally. The verifier skips JavaScript checks when Node.js is not on `PATH`.
+
 Local run:
 
-1. Install Python dependencies with `pip install -r requirements.txt` if your environment does not already have them.
-2. Start the server with `python main.py`.
-3. Open `http://localhost:8000`.
-4. Create a poll from the host page and share the generated voter link.
+1. Start the Go server with `go run ./cmd/dnd-vote`.
+2. Open `http://localhost:8000`.
+
+The server listens on `0.0.0.0:8000` by default. Override the bind address with `DND_VOTE_HOST` and `DND_VOTE_PORT` when needed.
 
 Local verification:
 
 Run `python scripts\verify.py` before deploying or handing off changes.
 
-The verification command checks Python syntax, runs the Python behavior tests against a temporary SQLite database, and checks JavaScript syntax with `node --check` when Node.js is installed.
+The verification command runs `go test ./...` and checks JavaScript syntax with `node --check` when Node.js is installed. It does not run a Python server or Python server tests.
 
 Data storage:
 
-Polls, candidate dates, votes, and host management tokens are stored in SQLite. By default, the local database file is `data/dnd_vote.db`.
+Polls, candidate dates, votes, and host management tokens are stored in SQLite. By default, the database file is `data/dnd_vote.db` under the server working directory.
 
-For Railway, the SQLite database must live on a persistent volume so deploys do not erase poll data:
+Set `DND_VOTE_DATA_DIR` to choose the directory that contains `dnd_vote.db`. Set `DND_VOTE_DB_PATH` only when the database file needs an exact path; it overrides `DND_VOTE_DATA_DIR`.
+
+For Railway, put the SQLite database on a persistent volume so deploys do not erase poll data:
 
 1. Push this repo to GitHub.
 2. In Railway, create a new project from the repo.
 3. Add a Railway volume and mount it at `/data`.
-4. Set the environment variable `DND_VOTE_DATA_DIR=/data`.
-5. Deploy the service.
+4. Set `DND_VOTE_DATA_DIR=/data`.
+5. Deploy the service. `railway.toml` starts the Go server with `go run ./cmd/dnd-vote`.
 6. Generate a Railway public domain and share that URL with the group.
 
 Management and destructive actions:
 
 The voter and results links are public poll links. The host management link is private because it carries the poll's management token in the `manage` query parameter.
 
-Keep the host management link with the person running the poll. It allows host-level cleanup such as deleting an individual vote from that poll. The server checks the management token before allowing those actions, so hiding buttons in the browser is not the security boundary.
+Keep the host management link with the person running the poll. The browser uses the `manage` query parameter value as `X-DnD-Vote-Management-Token` when deleting an individual vote from that poll. The Go server checks the token against the stored token for that poll before deleting anything, so hiding buttons in the browser is not the security boundary.
 
-Bulk clearing every poll is protected separately. To allow an operator to clear all polls, set `DND_VOTE_ADMIN_SECRET` in the server environment and send that same value as the admin secret when calling the bulk-clear API. Without the configured secret, or with the wrong secret, the server rejects the action.
+Bulk clearing every poll is protected separately. Configure `DND_VOTE_ADMIN_SECRET` in the server environment and send the same value in the `X-DnD-Vote-Admin-Secret` header when calling the bulk-clear API. Without a configured secret, without the header, or with the wrong header value, the Go server rejects the action.
 
 Important URLs:
 
