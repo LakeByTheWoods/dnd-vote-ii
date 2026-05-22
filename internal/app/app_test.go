@@ -360,6 +360,95 @@ func TestVoteCreationReplacementAndResultsAPIs(t *testing.T) {
 	}
 }
 
+func TestDeleteVoteRequiresMatchingPollManagementTokenAndReturnsUpdatedPoll(t *testing.T) {
+	handler := testRouter(t, 8192)
+	created := createTestPoll(t, handler)
+	first, second, third := created.Poll.Dates[0].ID, created.Poll.Dates[1].ID, created.Poll.Dates[2].ID
+
+	for _, payload := range []map[string]any{
+		{"voterName": "Alice", "rankings": []any{first, second}, "unavailableDateIds": []any{third}},
+		{"voterName": "Bob", "rankings": []any{second, first}, "unavailableDateIds": []any{}},
+	} {
+		response := requestJSON(t, handler, http.MethodPost, "/api/polls/"+created.Poll.ID+"/votes", payload)
+		if response.Code != http.StatusCreated {
+			t.Fatalf("vote status = %d, want %d; body: %s", response.Code, http.StatusCreated, response.Body.String())
+		}
+	}
+
+	fetchResponse := requestJSON(t, handler, http.MethodGet, "/api/polls/"+created.Poll.ID, nil)
+	var beforeDelete struct {
+		Poll pollPayload `json:"poll"`
+	}
+	decodeJSON(t, fetchResponse, &beforeDelete)
+	if len(beforeDelete.Poll.Votes) != 2 {
+		t.Fatalf("votes before delete = %#v, want two votes", beforeDelete.Poll.Votes)
+	}
+	aliceVoteID := beforeDelete.Poll.Votes[0].ID
+
+	tests := []struct {
+		name    string
+		headers map[string]string
+		error   string
+	}{
+		{
+			name:  "missing token",
+			error: "Management token is required.",
+		},
+		{
+			name:    "invalid token",
+			headers: map[string]string{"X-DnD-Vote-Management-Token": "not-the-token"},
+			error:   "Management token is invalid.",
+		},
+		{
+			name:    "different poll token",
+			headers: map[string]string{"X-DnD-Vote-Management-Token": createTestPoll(t, handler).ManagementToken},
+			error:   "Management token is invalid.",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			response := requestJSONWithHeaders(t, handler, http.MethodDelete, "/api/polls/"+created.Poll.ID+"/votes/"+aliceVoteID, nil, test.headers)
+			if response.Code != http.StatusForbidden {
+				t.Fatalf("status = %d, want %d; body: %s", response.Code, http.StatusForbidden, response.Body.String())
+			}
+			var payload map[string]string
+			decodeJSON(t, response, &payload)
+			if payload["error"] != test.error {
+				t.Fatalf("error = %q, want %q", payload["error"], test.error)
+			}
+		})
+	}
+
+	deleteResponse := requestJSONWithHeaders(
+		t,
+		handler,
+		http.MethodDelete,
+		"/api/polls/"+created.Poll.ID+"/votes/"+aliceVoteID,
+		nil,
+		map[string]string{"X-DnD-Vote-Management-Token": created.ManagementToken},
+	)
+	if deleteResponse.Code != http.StatusOK {
+		t.Fatalf("delete status = %d, want %d; body: %s", deleteResponse.Code, http.StatusOK, deleteResponse.Body.String())
+	}
+	if bytes.Contains(deleteResponse.Body.Bytes(), []byte(created.ManagementToken)) {
+		t.Fatalf("delete response leaked management token: %s", deleteResponse.Body.String())
+	}
+
+	var deleted struct {
+		Poll pollPayload `json:"poll"`
+	}
+	decodeJSON(t, deleteResponse, &deleted)
+	if len(deleted.Poll.Votes) != 1 {
+		t.Fatalf("votes after delete = %#v, want only Bob's vote", deleted.Poll.Votes)
+	}
+	if deleted.Poll.Votes[0].VoterName != "Bob" {
+		t.Fatalf("remaining voter = %q, want Bob", deleted.Poll.Votes[0].VoterName)
+	}
+	if deleted.Poll.Votes[0].ID == aliceVoteID {
+		t.Fatalf("deleted vote %q was still present", aliceVoteID)
+	}
+}
+
 func TestResultsAPIIncludesTalliedDateDetailsAndSubmittedBallots(t *testing.T) {
 	handler := testRouter(t, 8192)
 	created := createTestPoll(t, handler)
@@ -1019,6 +1108,12 @@ func createTestPoll(t *testing.T, handler http.Handler) createdPollPayload {
 func requestJSON(t *testing.T, handler http.Handler, method string, path string, payload any) *httptest.ResponseRecorder {
 	t.Helper()
 
+	return requestJSONWithHeaders(t, handler, method, path, payload, nil)
+}
+
+func requestJSONWithHeaders(t *testing.T, handler http.Handler, method string, path string, payload any, headers map[string]string) *httptest.ResponseRecorder {
+	t.Helper()
+
 	var body io.Reader
 	if payload != nil {
 		content, err := json.Marshal(payload)
@@ -1031,6 +1126,9 @@ func requestJSON(t *testing.T, handler http.Handler, method string, path string,
 	request := httptest.NewRequest(method, path, body)
 	if payload != nil {
 		request.Header.Set("Content-Type", "application/json")
+	}
+	for name, value := range headers {
+		request.Header.Set(name, value)
 	}
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, request)

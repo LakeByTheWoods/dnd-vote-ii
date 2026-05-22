@@ -3,6 +3,8 @@ package app
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
+	"crypto/subtle"
 	"database/sql"
 	"encoding/base64"
 	"errors"
@@ -20,7 +22,10 @@ const (
 	maxVoterNameLength = 80
 )
 
-var ErrPollNotFound = errors.New("poll not found")
+var (
+	ErrPollNotFound = errors.New("poll not found")
+	ErrVoteNotFound = errors.New("vote not found")
+)
 
 type Poll struct {
 	ID        string     `json:"id"`
@@ -213,6 +218,60 @@ func (s *Store) ReplaceVote(ctx context.Context, pollID string, voteInput VoteIn
 		); err != nil {
 			return Poll{}, err
 		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return Poll{}, err
+	}
+
+	return s.FetchPoll(ctx, pollID)
+}
+
+func (s *Store) ManagementTokenMatches(ctx context.Context, pollID string, candidateToken string) (bool, error) {
+	var expectedToken string
+	err := s.db.QueryRowContext(
+		ctx,
+		"SELECT management_token FROM polls WHERE id = ?",
+		pollID,
+	).Scan(&expectedToken)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+
+	expectedDigest := sha256.Sum256([]byte(expectedToken))
+	candidateDigest := sha256.Sum256([]byte(candidateToken))
+	return subtle.ConstantTimeCompare(expectedDigest[:], candidateDigest[:]) == 1, nil
+}
+
+func (s *Store) DeleteVote(ctx context.Context, pollID string, voteID string) (Poll, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return Poll{}, err
+	}
+	defer rollbackUnlessCommitted(tx)
+
+	if _, err := s.fetchPollForUpdate(ctx, tx, pollID); err != nil {
+		return Poll{}, err
+	}
+
+	result, err := tx.ExecContext(
+		ctx,
+		"DELETE FROM votes WHERE id = ? AND poll_id = ?",
+		voteID,
+		pollID,
+	)
+	if err != nil {
+		return Poll{}, err
+	}
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return Poll{}, err
+	}
+	if rowsAffected == 0 {
+		return Poll{}, ErrVoteNotFound
 	}
 
 	if err := tx.Commit(); err != nil {
