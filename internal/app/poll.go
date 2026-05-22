@@ -3,8 +3,6 @@ package app
 import (
 	"context"
 	"crypto/rand"
-	"crypto/sha256"
-	"crypto/subtle"
 	"database/sql"
 	"encoding/base64"
 	"errors"
@@ -241,9 +239,7 @@ func (s *Store) ManagementTokenMatches(ctx context.Context, pollID string, candi
 		return false, err
 	}
 
-	expectedDigest := sha256.Sum256([]byte(expectedToken))
-	candidateDigest := sha256.Sum256([]byte(candidateToken))
-	return subtle.ConstantTimeCompare(expectedDigest[:], candidateDigest[:]) == 1, nil
+	return constantTimeStringEqual(expectedToken, candidateToken), nil
 }
 
 func (s *Store) DeleteVote(ctx context.Context, pollID string, voteID string) (Poll, error) {
@@ -279,6 +275,19 @@ func (s *Store) DeleteVote(ctx context.Context, pollID string, voteID string) (P
 	}
 
 	return s.FetchPoll(ctx, pollID)
+}
+
+func (s *Store) ClearPolls(ctx context.Context) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer rollbackUnlessCommitted(tx)
+
+	if _, err := tx.ExecContext(ctx, "DELETE FROM polls"); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (s *Store) fetchPollForUpdate(ctx context.Context, tx *sql.Tx, pollID string) (Poll, error) {

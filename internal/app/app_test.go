@@ -449,6 +449,74 @@ func TestDeleteVoteRequiresMatchingPollManagementTokenAndReturnsUpdatedPoll(t *t
 	}
 }
 
+func TestBulkClearRequiresConfiguredAdminSecretAndRemovesPollData(t *testing.T) {
+	handler := testRouterWithConfig(t, 8192, func(cfg *Config) {
+		cfg.AdminSecret = "test-admin-secret"
+	})
+	created := createTestPoll(t, handler)
+	first, second := created.Poll.Dates[0].ID, created.Poll.Dates[1].ID
+
+	voteResponse := requestJSON(t, handler, http.MethodPost, "/api/polls/"+created.Poll.ID+"/votes", map[string]any{
+		"voterName":          "Alice",
+		"rankings":           []any{first},
+		"unavailableDateIds": []any{second},
+	})
+	if voteResponse.Code != http.StatusCreated {
+		t.Fatalf("vote status = %d, want %d; body: %s", voteResponse.Code, http.StatusCreated, voteResponse.Body.String())
+	}
+
+	missingSecret := requestJSON(t, handler, http.MethodDelete, "/api/polls", nil)
+	if missingSecret.Code != http.StatusForbidden {
+		t.Fatalf("missing secret status = %d, want %d; body: %s", missingSecret.Code, http.StatusForbidden, missingSecret.Body.String())
+	}
+	var missingPayload map[string]string
+	decodeJSON(t, missingSecret, &missingPayload)
+	if missingPayload["error"] != "Admin secret is required." {
+		t.Fatalf("missing secret error = %q", missingPayload["error"])
+	}
+
+	invalidSecret := requestJSONWithHeaders(
+		t,
+		handler,
+		http.MethodDelete,
+		"/api/polls",
+		nil,
+		map[string]string{"X-DnD-Vote-Admin-Secret": "wrong-secret"},
+	)
+	if invalidSecret.Code != http.StatusForbidden {
+		t.Fatalf("invalid secret status = %d, want %d; body: %s", invalidSecret.Code, http.StatusForbidden, invalidSecret.Body.String())
+	}
+	var invalidPayload map[string]string
+	decodeJSON(t, invalidSecret, &invalidPayload)
+	if invalidPayload["error"] != "Admin secret is invalid." {
+		t.Fatalf("invalid secret error = %q", invalidPayload["error"])
+	}
+	assertPollSummaryCount(t, handler, 1)
+
+	validSecret := requestJSONWithHeaders(
+		t,
+		handler,
+		http.MethodDelete,
+		"/api/polls",
+		nil,
+		map[string]string{"X-DnD-Vote-Admin-Secret": "test-admin-secret"},
+	)
+	if validSecret.Code != http.StatusOK {
+		t.Fatalf("valid secret status = %d, want %d; body: %s", validSecret.Code, http.StatusOK, validSecret.Body.String())
+	}
+	var validPayload map[string]bool
+	decodeJSON(t, validSecret, &validPayload)
+	if !validPayload["ok"] {
+		t.Fatalf("valid secret payload = %#v, want ok true", validPayload)
+	}
+
+	assertPollSummaryCount(t, handler, 0)
+	fetchClearedPoll := requestJSON(t, handler, http.MethodGet, "/api/polls/"+created.Poll.ID, nil)
+	if fetchClearedPoll.Code != http.StatusNotFound {
+		t.Fatalf("fetch cleared poll status = %d, want %d; body: %s", fetchClearedPoll.Code, http.StatusNotFound, fetchClearedPoll.Body.String())
+	}
+}
+
 func TestResultsAPIIncludesTalliedDateDetailsAndSubmittedBallots(t *testing.T) {
 	handler := testRouter(t, 8192)
 	created := createTestPoll(t, handler)
@@ -921,6 +989,12 @@ func TestNewHTTPServerSetsProductionTimeouts(t *testing.T) {
 func testRouter(t *testing.T, maxBodyBytes int64) http.Handler {
 	t.Helper()
 
+	return testRouterWithConfig(t, maxBodyBytes, nil)
+}
+
+func testRouterWithConfig(t *testing.T, maxBodyBytes int64, configure func(*Config)) http.Handler {
+	t.Helper()
+
 	store, err := OpenStore(context.Background(), filepath.Join(t.TempDir(), "dnd_vote.db"))
 	if err != nil {
 		t.Fatalf("OpenStore returned error: %v", err)
@@ -934,6 +1008,9 @@ func testRouter(t *testing.T, maxBodyBytes int64) http.Handler {
 	cfg := DefaultConfig()
 	cfg.StaticDir = repoRoot(t)
 	cfg.MaxRequestBodyBytes = maxBodyBytes
+	if configure != nil {
+		configure(&cfg)
+	}
 
 	return NewRouter(cfg, store)
 }
@@ -1140,6 +1217,22 @@ func decodeJSON(t *testing.T, response *httptest.ResponseRecorder, payload any) 
 
 	if err := json.Unmarshal(response.Body.Bytes(), payload); err != nil {
 		t.Fatalf("response was not JSON: %v; body: %s", err, response.Body.String())
+	}
+}
+
+func assertPollSummaryCount(t *testing.T, handler http.Handler, expected int) {
+	t.Helper()
+
+	listResponse := requestJSON(t, handler, http.MethodGet, "/api/polls", nil)
+	if listResponse.Code != http.StatusOK {
+		t.Fatalf("list status = %d, want %d; body: %s", listResponse.Code, http.StatusOK, listResponse.Body.String())
+	}
+	var listed struct {
+		Polls []pollSummaryPayload `json:"polls"`
+	}
+	decodeJSON(t, listResponse, &listed)
+	if len(listed.Polls) != expected {
+		t.Fatalf("poll summary count = %d, want %d; payload: %#v", len(listed.Polls), expected, listed.Polls)
 	}
 }
 
