@@ -18,6 +18,13 @@ def run(command: list[str]) -> None:
 
 
 def main() -> int:
+    go = shutil.which("go")
+    if go is None:
+        print("$ go test ./...")
+        print("error: go is not installed or is not on PATH")
+        return 1
+
+    run([go, "test", "./..."])
     run([sys.executable, "-m", "py_compile", *PYTHON_FILES])
     run([sys.executable, "-m", "unittest", "discover", "-s", "tests"])
 
