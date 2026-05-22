@@ -1,4 +1,4 @@
-Status: ready-for-agent
+Status: completed
 
 ## Parent
 
@@ -25,3 +25,10 @@ This slice should make the tally behavior independently testable and keep result
 ## Blocked by
 
 - .scratch/go-server-migration/issues/03-submit-and-replace-votes-end-to-end.md
+
+## Comments
+
+- Completed on branch `codex/go-server-migration/04-ranked-pairs-results` and merged into `codex/go-server-migration-prd`.
+- Acceptance review: approved.
+- Code-quality review: approved after adding intent comments around ranked-pairs algorithm decisions.
+- Verification on PRD branch: `$env:PATH='C:\Program Files\Go\bin;' + $env:PATH; python scripts\verify.py` passed.
