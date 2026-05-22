@@ -23,6 +23,8 @@ func NewRouter(cfg Config, store *Store) http.Handler {
 		api.Get("/health", func(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 		})
+		// Issue 01 exposes only enough API shape for the static app shell and
+		// later migration slices; poll behavior remains on the Python server.
 		api.Get("/polls", func(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusOK, map[string][]any{"polls": []any{}})
 		})
@@ -44,6 +46,8 @@ func NewRouter(cfg Config, store *Store) http.Handler {
 		})
 	})
 
+	// Keep static serving as an explicit allowlist so the Go server only
+	// publishes the existing plain frontend assets during the migration.
 	staticFiles := map[string]string{
 		"/":             "index.html",
 		"/index.html":   "index.html",
@@ -70,6 +74,8 @@ func NewRouter(cfg Config, store *Store) http.Handler {
 		http.NotFound(w, r)
 	})
 
+	// The router accepts the store now so later vertical slices can add poll
+	// handlers without changing the construction path tested in this slice.
 	_ = store
 	return router
 }
@@ -110,6 +116,8 @@ func jsonBodyLimit(maxBodyBytes int64) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if isJSONRequestWithBody(r) {
+				// Prefer rejecting known-oversize JSON requests before handlers
+				// read the body, then cap streaming reads for missing lengths.
 				if r.ContentLength > maxBodyBytes {
 					writeJSON(
 						w,
