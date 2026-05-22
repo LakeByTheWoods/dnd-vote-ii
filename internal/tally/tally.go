@@ -72,6 +72,8 @@ func Calculate(poll Poll) Result {
 		}
 	}
 
+	// A single unavailable mark disqualifies the date before ranking so the
+	// head-to-head graph never allows an impossible session date to win.
 	eligibleIDs := []string{}
 	for _, tally := range tallies {
 		if !tally.Disqualified {
@@ -79,6 +81,8 @@ func Calculate(poll Poll) Result {
 		}
 	}
 	if len(eligibleIDs) <= 1 {
+		// With zero or one eligible date there is no meaningful pairwise graph;
+		// preserve the same result shape while ranking the sole possible winner.
 		for index := range tallies {
 			if !tallies[index].Disqualified {
 				rank := 1
@@ -174,6 +178,8 @@ func buildPreferenceMatrix(votes []Vote, eligibleIDs []string) map[string]map[st
 					rightPosition = maxPosition
 				}
 
+				// Unranked eligible dates share the same synthetic last position,
+				// so voters express no preference among dates they omitted.
 				if leftPosition < rightPosition {
 					matrix[leftID][rightID]++
 				} else if rightPosition < leftPosition {
@@ -213,6 +219,8 @@ func buildPairResults(preferenceMatrix map[string]map[string]int, eligibleIDs []
 		}
 	}
 	sort.Slice(pairs, func(left, right int) bool {
+		// Ranked pairs locks the strongest victories first. Margin is primary,
+		// then raw support, with ID ordering only to keep equal cases stable.
 		if pairs[left].Margin != pairs[right].Margin {
 			return pairs[left].Margin > pairs[right].Margin
 		}
@@ -233,6 +241,8 @@ func buildRankedPairsGraph(pairResults []pairResult, eligibleIDs []string) map[s
 		lockedEdges[dateID] = map[string]bool{}
 	}
 	for _, pair := range pairResults {
+		// A victory that closes a cycle is skipped so earlier stronger victories
+		// remain locked without creating contradictory ordering constraints.
 		if createsCycle(lockedEdges, pair.WinnerID, pair.LoserID) {
 			continue
 		}
@@ -292,6 +302,8 @@ func topologicalOrder(lockedEdges map[string]map[string]bool, eligibleIDs []stri
 		}
 
 		sort.Slice(available, func(left, right int) bool {
+			// When locked edges do not fully order candidates, prefer the
+			// stronger head-to-head record and then calendar order for stability.
 			leftTally := byID[available[left]]
 			rightTally := byID[available[right]]
 			if leftTally.PairwiseWins != rightTally.PairwiseWins {
