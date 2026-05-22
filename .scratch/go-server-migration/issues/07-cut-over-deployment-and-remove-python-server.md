@@ -1,4 +1,4 @@
-Status: ready-for-agent
+Status: completed
 
 ## Parent
 
@@ -30,3 +30,10 @@ This slice should happen only after the Go server covers poll creation, voting, 
 - .scratch/go-server-migration/issues/04-expose-ranked-pairs-results-end-to-end.md
 - .scratch/go-server-migration/issues/05-protect-and-delete-individual-votes.md
 - .scratch/go-server-migration/issues/06-protect-admin-bulk-clear.md
+
+## Comments
+
+- Completed on branch `codex/go-server-migration/07-cutover-go-server` and merged into `codex/go-server-migration-prd`.
+- Acceptance review: approved.
+- Code-quality review: approved.
+- Verification on PRD branch: `$env:PATH='C:\Program Files\Go\bin;' + $env:PATH; python scripts\verify.py` passed.
