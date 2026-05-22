@@ -1,9 +1,11 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -189,6 +191,141 @@ func TestJSONAPIRequestsEnforceMaximumBodySize(t *testing.T) {
 	}
 }
 
+func TestPollCreationFetchResultsAndListAPIs(t *testing.T) {
+	handler := testRouter(t, 8192)
+	dates := futureDateValues()
+
+	createResponse := requestJSON(t, handler, http.MethodPost, "/api/polls", map[string]any{
+		"title": " Waterdeep Campaign Night ",
+		"dates": []any{dates[2], dates[0], dates[1], " " + dates[0] + " "},
+	})
+	if createResponse.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want %d; body: %s", createResponse.Code, http.StatusCreated, createResponse.Body.String())
+	}
+
+	var created struct {
+		Poll            pollPayload `json:"poll"`
+		ManagementToken string      `json:"managementToken"`
+	}
+	decodeJSON(t, createResponse, &created)
+	if created.ManagementToken == "" || len(created.ManagementToken) < 24 {
+		t.Fatalf("management token was not generated securely enough: %q", created.ManagementToken)
+	}
+	if created.Poll.ManagementToken != "" {
+		t.Fatalf("created poll leaked management token: %#v", created.Poll)
+	}
+	if created.Poll.Title != "Waterdeep Campaign Night" {
+		t.Fatalf("title = %q", created.Poll.Title)
+	}
+	if got := pollDateValues(created.Poll.Dates); !equalStrings(got, dates) {
+		t.Fatalf("dates = %#v, want %#v", got, dates)
+	}
+	if len(created.Poll.Votes) != 0 {
+		t.Fatalf("created poll votes = %#v, want none", created.Poll.Votes)
+	}
+
+	fetchResponse := requestJSON(t, handler, http.MethodGet, "/api/polls/"+created.Poll.ID, nil)
+	if fetchResponse.Code != http.StatusOK {
+		t.Fatalf("fetch status = %d, want %d", fetchResponse.Code, http.StatusOK)
+	}
+	var fetched struct {
+		Poll pollPayload `json:"poll"`
+	}
+	decodeJSON(t, fetchResponse, &fetched)
+	if fetched.Poll.ID != created.Poll.ID {
+		t.Fatalf("fetched poll id = %q, want %q", fetched.Poll.ID, created.Poll.ID)
+	}
+	if bytes.Contains(fetchResponse.Body.Bytes(), []byte(created.ManagementToken)) {
+		t.Fatalf("fetch response leaked management token: %s", fetchResponse.Body.String())
+	}
+
+	resultsResponse := requestJSON(t, handler, http.MethodGet, "/api/polls/"+created.Poll.ID+"/results", nil)
+	if resultsResponse.Code != http.StatusOK {
+		t.Fatalf("results status = %d, want %d", resultsResponse.Code, http.StatusOK)
+	}
+	if bytes.Contains(resultsResponse.Body.Bytes(), []byte(created.ManagementToken)) {
+		t.Fatalf("results response leaked management token: %s", resultsResponse.Body.String())
+	}
+
+	listResponse := requestJSON(t, handler, http.MethodGet, "/api/polls", nil)
+	if listResponse.Code != http.StatusOK {
+		t.Fatalf("list status = %d, want %d", listResponse.Code, http.StatusOK)
+	}
+	var listed struct {
+		Polls []pollSummaryPayload `json:"polls"`
+	}
+	decodeJSON(t, listResponse, &listed)
+	if len(listed.Polls) != 1 {
+		t.Fatalf("poll summaries length = %d, want 1", len(listed.Polls))
+	}
+	summary := listed.Polls[0]
+	if summary.ID != created.Poll.ID || summary.Title != created.Poll.Title || summary.DateCount != 3 || summary.VoteCount != 0 {
+		t.Fatalf("summary = %#v", summary)
+	}
+}
+
+func TestCreatePollValidationErrorsArePredictable(t *testing.T) {
+	handler := testRouter(t, 8192)
+	dates := futureDateValues()
+	yesterday := time.Now().AddDate(0, 0, -1).Format("2006-01-02")
+
+	tests := []struct {
+		name    string
+		payload map[string]any
+		error   string
+	}{
+		{
+			name:    "blank title",
+			payload: map[string]any{"title": " ", "dates": dates[:2]},
+			error:   "Title is required.",
+		},
+		{
+			name:    "oversized title",
+			payload: map[string]any{"title": strings.Repeat("G", 121), "dates": dates[:2]},
+			error:   "Title must be 120 characters or fewer.",
+		},
+		{
+			name:    "dates must be array",
+			payload: map[string]any{"title": "Game", "dates": dates[0]},
+			error:   "Dates must be an array.",
+		},
+		{
+			name:    "too few unique dates",
+			payload: map[string]any{"title": "Game", "dates": []any{dates[0], " " + dates[0] + " "}},
+			error:   "At least two unique dates are required.",
+		},
+		{
+			name:    "invalid date value",
+			payload: map[string]any{"title": "Game", "dates": []any{dates[0], "not-a-date"}},
+			error:   "Dates must use YYYY-MM-DD format.",
+		},
+		{
+			name:    "past date",
+			payload: map[string]any{"title": "Game", "dates": []any{dates[0], yesterday}},
+			error:   "Candidate dates must be today or later.",
+		},
+		{
+			name:    "invalid date payload type",
+			payload: map[string]any{"title": "Game", "dates": []any{dates[0], map[string]any{"date": dates[1]}}},
+			error:   "Dates must use YYYY-MM-DD format.",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			response := requestJSON(t, handler, http.MethodPost, "/api/polls", test.payload)
+			if response.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want %d; body: %s", response.Code, http.StatusBadRequest, response.Body.String())
+			}
+			var payload map[string]string
+			decodeJSON(t, response, &payload)
+			if payload["error"] != test.error {
+				t.Fatalf("error = %q, want %q", payload["error"], test.error)
+			}
+		})
+	}
+}
+
 func TestNewHTTPServerSetsProductionTimeouts(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.Host = "127.0.0.1"
@@ -229,6 +366,86 @@ func testRouter(t *testing.T, maxBodyBytes int64) http.Handler {
 	cfg.MaxRequestBodyBytes = maxBodyBytes
 
 	return NewRouter(cfg, store)
+}
+
+type pollPayload struct {
+	ID              string        `json:"id"`
+	Title           string        `json:"title"`
+	CreatedAt       string        `json:"createdAt"`
+	Dates           []datePayload `json:"dates"`
+	Votes           []any         `json:"votes"`
+	ManagementToken string        `json:"managementToken"`
+}
+
+type datePayload struct {
+	ID    string `json:"id"`
+	Value string `json:"value"`
+}
+
+type pollSummaryPayload struct {
+	ID        string `json:"id"`
+	Title     string `json:"title"`
+	CreatedAt string `json:"createdAt"`
+	DateCount int    `json:"dateCount"`
+	VoteCount int    `json:"voteCount"`
+}
+
+func requestJSON(t *testing.T, handler http.Handler, method string, path string, payload any) *httptest.ResponseRecorder {
+	t.Helper()
+
+	var body io.Reader
+	if payload != nil {
+		content, err := json.Marshal(payload)
+		if err != nil {
+			t.Fatalf("json.Marshal returned error: %v", err)
+		}
+		body = bytes.NewReader(content)
+	}
+
+	request := httptest.NewRequest(method, path, body)
+	if payload != nil {
+		request.Header.Set("Content-Type", "application/json")
+	}
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	return response
+}
+
+func decodeJSON(t *testing.T, response *httptest.ResponseRecorder, payload any) {
+	t.Helper()
+
+	if err := json.Unmarshal(response.Body.Bytes(), payload); err != nil {
+		t.Fatalf("response was not JSON: %v; body: %s", err, response.Body.String())
+	}
+}
+
+func futureDateValues() []string {
+	base := time.Now().AddDate(0, 0, 30)
+	return []string{
+		base.Format("2006-01-02"),
+		base.AddDate(0, 0, 2).Format("2006-01-02"),
+		base.AddDate(0, 0, 4).Format("2006-01-02"),
+	}
+}
+
+func pollDateValues(dates []datePayload) []string {
+	values := make([]string, 0, len(dates))
+	for _, date := range dates {
+		values = append(values, date.Value)
+	}
+	return values
+}
+
+func equalStrings(left []string, right []string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for index := range left {
+		if left[index] != right[index] {
+			return false
+		}
+	}
+	return true
 }
 
 func repoRoot(t *testing.T) string {
