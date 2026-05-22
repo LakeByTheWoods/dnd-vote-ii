@@ -360,6 +360,100 @@ func TestVoteCreationReplacementAndResultsAPIs(t *testing.T) {
 	}
 }
 
+func TestResultsAPIIncludesTalliedDateDetailsAndSubmittedBallots(t *testing.T) {
+	handler := testRouter(t, 8192)
+	created := createTestPoll(t, handler)
+	first, second, third := created.Poll.Dates[0].ID, created.Poll.Dates[1].ID, created.Poll.Dates[2].ID
+
+	for _, payload := range []map[string]any{
+		{"voterName": "Alice", "rankings": []any{first, second}, "unavailableDateIds": []any{third}},
+		{"voterName": "Bob", "rankings": []any{second, first}, "unavailableDateIds": []any{}},
+		{"voterName": "Cara", "rankings": []any{second, first}, "unavailableDateIds": []any{}},
+	} {
+		response := requestJSON(t, handler, http.MethodPost, "/api/polls/"+created.Poll.ID+"/votes", payload)
+		if response.Code != http.StatusCreated {
+			t.Fatalf("vote status = %d, want %d; body: %s", response.Code, http.StatusCreated, response.Body.String())
+		}
+	}
+
+	response := requestJSON(t, handler, http.MethodGet, "/api/polls/"+created.Poll.ID+"/results", nil)
+	if response.Code != http.StatusOK {
+		t.Fatalf("results status = %d, want %d; body: %s", response.Code, http.StatusOK, response.Body.String())
+	}
+	if bytes.Contains(response.Body.Bytes(), []byte(created.ManagementToken)) {
+		t.Fatalf("results response leaked management token: %s", response.Body.String())
+	}
+
+	var results struct {
+		Poll         pollPayload          `json:"poll"`
+		TalliedDates []talliedDatePayload `json:"talliedDates"`
+		Winner       *talliedDatePayload  `json:"winner"`
+	}
+	decodeJSON(t, response, &results)
+
+	if len(results.Poll.Votes) != 3 {
+		t.Fatalf("submitted ballots length = %d, want 3", len(results.Poll.Votes))
+	}
+	if results.Winner == nil || results.Winner.ID != second {
+		t.Fatalf("winner = %#v, want %q", results.Winner, second)
+	}
+	if got := talliedPayloadIDs(results.TalliedDates); !equalStrings(got, []string{second, first, third}) {
+		t.Fatalf("tallied date order = %#v", got)
+	}
+
+	talliesByID := map[string]talliedDatePayload{}
+	for _, tally := range results.TalliedDates {
+		talliesByID[tally.ID] = tally
+	}
+	if talliesByID[second].Rank != 1 || talliesByID[second].Record != "1-0-0" || talliesByID[second].Disqualified {
+		t.Fatalf("second-date tally = %#v", talliesByID[second])
+	}
+	if talliesByID[first].Rank != 2 || talliesByID[first].Record != "0-1-0" || talliesByID[first].Disqualified {
+		t.Fatalf("first-date tally = %#v", talliesByID[first])
+	}
+	if talliesByID[third].Rank != 0 || talliesByID[third].Record != "0-0-0" || !talliesByID[third].Disqualified {
+		t.Fatalf("third-date tally = %#v", talliesByID[third])
+	}
+	if !equalStrings(talliesByID[third].UnavailableBy, []string{"Alice"}) {
+		t.Fatalf("unavailableBy = %#v, want Alice", talliesByID[third].UnavailableBy)
+	}
+}
+
+func TestResultsAPIReturnsNullWinnerWhenEveryDateIsDisqualified(t *testing.T) {
+	handler := testRouter(t, 8192)
+	created := createTestPoll(t, handler)
+	first, second, third := created.Poll.Dates[0].ID, created.Poll.Dates[1].ID, created.Poll.Dates[2].ID
+
+	for _, payload := range []map[string]any{
+		{"voterName": "Alice", "rankings": []any{first}, "unavailableDateIds": []any{second, third}},
+		{"voterName": "Bob", "rankings": []any{second}, "unavailableDateIds": []any{first}},
+	} {
+		response := requestJSON(t, handler, http.MethodPost, "/api/polls/"+created.Poll.ID+"/votes", payload)
+		if response.Code != http.StatusCreated {
+			t.Fatalf("vote status = %d, want %d; body: %s", response.Code, http.StatusCreated, response.Body.String())
+		}
+	}
+
+	response := requestJSON(t, handler, http.MethodGet, "/api/polls/"+created.Poll.ID+"/results", nil)
+	if response.Code != http.StatusOK {
+		t.Fatalf("results status = %d, want %d; body: %s", response.Code, http.StatusOK, response.Body.String())
+	}
+
+	var results struct {
+		TalliedDates []talliedDatePayload `json:"talliedDates"`
+		Winner       *talliedDatePayload  `json:"winner"`
+	}
+	decodeJSON(t, response, &results)
+	if results.Winner != nil {
+		t.Fatalf("winner = %#v, want nil", results.Winner)
+	}
+	for _, tally := range results.TalliedDates {
+		if !tally.Disqualified {
+			t.Fatalf("tally = %#v, want every date disqualified", tally)
+		}
+	}
+}
+
 func TestTallyResultsRankedPairsCases(t *testing.T) {
 	tests := []struct {
 		name                  string
@@ -829,6 +923,14 @@ func tallyVoteFixture(voterName string, rankings []string, unavailableDateIDs []
 }
 
 func tallyIDs(talliedDates []TalliedDate) []string {
+	ids := make([]string, 0, len(talliedDates))
+	for _, tally := range talliedDates {
+		ids = append(ids, tally.ID)
+	}
+	return ids
+}
+
+func talliedPayloadIDs(talliedDates []talliedDatePayload) []string {
 	ids := make([]string, 0, len(talliedDates))
 	for _, tally := range talliedDates {
 		ids = append(ids, tally.ID)
