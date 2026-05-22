@@ -1,4 +1,4 @@
-Status: ready-for-agent
+Status: completed
 
 ## Parent
 
@@ -25,3 +25,10 @@ This slice should include the domain types, validation, SQLite persistence, mana
 ## Blocked by
 
 - .scratch/go-server-migration/issues/01-bootstrap-go-server-with-static-app-shell.md
+
+## Comments
+
+- Completed on branch `codex/go-server-migration/02-create-and-fetch-polls` and merged into `codex/go-server-migration-prd`.
+- Acceptance review: approved.
+- Code-quality review: approved.
+- Verification on PRD branch: `$env:PATH='C:\Program Files\Go\bin;' + $env:PATH; python scripts\verify.py` passed.
