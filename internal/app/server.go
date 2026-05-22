@@ -57,6 +57,37 @@ func NewRouter(cfg Config, store *Store) http.Handler {
 				"managementToken": managementToken,
 			})
 		})
+		api.Post("/polls/{pollID}/votes", func(w http.ResponseWriter, r *http.Request) {
+			payload, ok := readJSONObject(w, r, cfg.MaxRequestBodyBytes)
+			if !ok {
+				return
+			}
+
+			voteInput, err := NormalizeVoteInput(payload["voterName"], payload["rankings"], payload["unavailableDateIds"])
+			if err != nil {
+				if isValidationError(err) {
+					writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+					return
+				}
+				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Vote could not be saved."})
+				return
+			}
+
+			poll, err := store.ReplaceVote(r.Context(), chi.URLParam(r, "pollID"), voteInput)
+			if errors.Is(err, ErrPollNotFound) {
+				writeJSON(w, http.StatusNotFound, map[string]string{"error": "Poll not found."})
+				return
+			}
+			if err != nil {
+				if isValidationError(err) {
+					writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+					return
+				}
+				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Vote could not be saved."})
+				return
+			}
+			writeJSON(w, http.StatusCreated, map[string]Poll{"poll": poll})
+		})
 		api.Get("/polls/{pollID}", func(w http.ResponseWriter, r *http.Request) {
 			poll, err := store.FetchPoll(r.Context(), chi.URLParam(r, "pollID"))
 			if errors.Is(err, ErrPollNotFound) {
@@ -79,7 +110,7 @@ func NewRouter(cfg Config, store *Store) http.Handler {
 				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Poll could not be fetched."})
 				return
 			}
-			talliedDates, winner := TallyNoVoteResults(poll)
+			talliedDates, winner := TallyResults(poll)
 			writeJSON(w, http.StatusOK, map[string]any{
 				"poll":         poll,
 				"talliedDates": talliedDates,
