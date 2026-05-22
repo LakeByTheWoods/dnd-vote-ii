@@ -88,6 +88,38 @@ func NewRouter(cfg Config, store *Store) http.Handler {
 			}
 			writeJSON(w, http.StatusCreated, map[string]Poll{"poll": poll})
 		})
+		api.Delete("/polls/{pollID}/votes/{voteID}", func(w http.ResponseWriter, r *http.Request) {
+			pollID := chi.URLParam(r, "pollID")
+			voteID := chi.URLParam(r, "voteID")
+			err := AuthorizeManagementToken(r.Context(), store, pollID, r.Header.Get(ManagementTokenHeader))
+			if errors.Is(err, ErrManagementTokenRequired) {
+				writeJSON(w, http.StatusForbidden, map[string]string{"error": "Management token is required."})
+				return
+			}
+			if errors.Is(err, ErrManagementTokenInvalid) {
+				writeJSON(w, http.StatusForbidden, map[string]string{"error": "Management token is invalid."})
+				return
+			}
+			if err != nil {
+				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Vote could not be deleted."})
+				return
+			}
+
+			poll, err := store.DeleteVote(r.Context(), pollID, voteID)
+			if errors.Is(err, ErrPollNotFound) {
+				writeJSON(w, http.StatusNotFound, map[string]string{"error": "Poll not found."})
+				return
+			}
+			if errors.Is(err, ErrVoteNotFound) {
+				writeJSON(w, http.StatusNotFound, map[string]string{"error": "Vote not found."})
+				return
+			}
+			if err != nil {
+				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Vote could not be deleted."})
+				return
+			}
+			writeJSON(w, http.StatusOK, map[string]Poll{"poll": poll})
+		})
 		api.Get("/polls/{pollID}", func(w http.ResponseWriter, r *http.Request) {
 			poll, err := store.FetchPoll(r.Context(), chi.URLParam(r, "pollID"))
 			if errors.Is(err, ErrPollNotFound) {
