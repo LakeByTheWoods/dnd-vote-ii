@@ -1,4 +1,4 @@
-Status: ready-for-agent
+Status: completed
 
 ## Parent
 
@@ -25,3 +25,10 @@ This slice should preserve the current user-facing ballot model and server valid
 ## Blocked by
 
 - .scratch/go-server-migration/issues/02-create-and-fetch-polls-end-to-end.md
+
+## Comments
+
+- Completed on branch `codex/go-server-migration/03-submit-and-replace-votes` and merged into `codex/go-server-migration-prd`.
+- Acceptance review: approved.
+- Code-quality review: approved after adding direct ranked-pairs tally test coverage for ordinary, cycle, tie, one-eligible, all-disqualified, and unavailability cases.
+- Verification on PRD branch: `$env:PATH='C:\Program Files\Go\bin;' + $env:PATH; python scripts\verify.py` passed.
