@@ -23,26 +23,68 @@ func NewRouter(cfg Config, store *Store) http.Handler {
 		api.Get("/health", func(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 		})
-		// Issue 01 exposes only enough API shape for the static app shell and
-		// later migration slices; poll behavior remains on the Python server.
 		api.Get("/polls", func(w http.ResponseWriter, r *http.Request) {
-			writeJSON(w, http.StatusOK, map[string][]any{"polls": []any{}})
-		})
-		api.Post("/polls", func(w http.ResponseWriter, r *http.Request) {
-			if err := discardBody(r.Body); err != nil {
-				var maxBytesError *http.MaxBytesError
-				if errors.As(err, &maxBytesError) {
-					writeJSON(
-						w,
-						http.StatusRequestEntityTooLarge,
-						map[string]string{"error": fmt.Sprintf("Request body must be %d bytes or fewer.", cfg.MaxRequestBodyBytes)},
-					)
-					return
-				}
-				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Request body could not be read."})
+			summaries, err := store.ListPollSummaries(r.Context())
+			if err != nil {
+				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Poll summaries could not be fetched."})
 				return
 			}
-			writeJSON(w, http.StatusNotImplemented, map[string]string{"error": "Poll creation is not implemented yet."})
+			writeJSON(w, http.StatusOK, map[string][]PollSummary{"polls": summaries})
+		})
+		api.Post("/polls", func(w http.ResponseWriter, r *http.Request) {
+			payload, ok := readJSONObject(w, r, cfg.MaxRequestBodyBytes)
+			if !ok {
+				return
+			}
+
+			title, dates, err := NormalizePollInput(payload["title"], payload["dates"])
+			if err != nil {
+				if isValidationError(err) {
+					writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+					return
+				}
+				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Poll could not be created."})
+				return
+			}
+
+			poll, managementToken, err := store.CreatePoll(r.Context(), title, dates)
+			if err != nil {
+				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Poll could not be created."})
+				return
+			}
+			writeJSON(w, http.StatusCreated, map[string]any{
+				"poll":            poll,
+				"managementToken": managementToken,
+			})
+		})
+		api.Get("/polls/{pollID}", func(w http.ResponseWriter, r *http.Request) {
+			poll, err := store.FetchPoll(r.Context(), chi.URLParam(r, "pollID"))
+			if errors.Is(err, ErrPollNotFound) {
+				writeJSON(w, http.StatusNotFound, map[string]string{"error": "Poll not found."})
+				return
+			}
+			if err != nil {
+				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Poll could not be fetched."})
+				return
+			}
+			writeJSON(w, http.StatusOK, map[string]Poll{"poll": poll})
+		})
+		api.Get("/polls/{pollID}/results", func(w http.ResponseWriter, r *http.Request) {
+			poll, err := store.FetchPoll(r.Context(), chi.URLParam(r, "pollID"))
+			if errors.Is(err, ErrPollNotFound) {
+				writeJSON(w, http.StatusNotFound, map[string]string{"error": "Poll not found."})
+				return
+			}
+			if err != nil {
+				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Poll could not be fetched."})
+				return
+			}
+			talliedDates, winner := TallyNoVoteResults(poll)
+			writeJSON(w, http.StatusOK, map[string]any{
+				"poll":         poll,
+				"talliedDates": talliedDates,
+				"winner":       winner,
+			})
 		})
 	})
 
@@ -74,9 +116,6 @@ func NewRouter(cfg Config, store *Store) http.Handler {
 		http.NotFound(w, r)
 	})
 
-	// The router accepts the store now so later vertical slices can add poll
-	// handlers without changing the construction path tested in this slice.
-	_ = store
 	return router
 }
 
@@ -144,6 +183,31 @@ func isJSONRequestWithBody(r *http.Request) bool {
 func discardBody(body io.Reader) error {
 	_, err := io.Copy(io.Discard, body)
 	return err
+}
+
+func readJSONObject(w http.ResponseWriter, r *http.Request, maxBodyBytes int64) (map[string]any, bool) {
+	var payload any
+	decoder := json.NewDecoder(r.Body)
+	if err := decoder.Decode(&payload); err != nil {
+		var maxBytesError *http.MaxBytesError
+		if errors.As(err, &maxBytesError) {
+			writeJSON(
+				w,
+				http.StatusRequestEntityTooLarge,
+				map[string]string{"error": fmt.Sprintf("Request body must be %d bytes or fewer.", maxBodyBytes)},
+			)
+			return nil, false
+		}
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Request body must be valid JSON."})
+		return nil, false
+	}
+
+	object, ok := payload.(map[string]any)
+	if !ok {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Request body must be a JSON object."})
+		return nil, false
+	}
+	return object, true
 }
 
 func writeJSON(w http.ResponseWriter, status int, payload any) {
