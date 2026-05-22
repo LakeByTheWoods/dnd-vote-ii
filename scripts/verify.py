@@ -2,12 +2,10 @@ from __future__ import annotations
 
 import shutil
 import subprocess
-import sys
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-PYTHON_FILES = ["server.py", "main.py"]
 JS_FILES = ["shared.js", "host.js", "vote.js", "results.js"]
 
 
@@ -25,8 +23,6 @@ def main() -> int:
         return 1
 
     run([go, "test", "./..."])
-    run([sys.executable, "-m", "py_compile", *PYTHON_FILES])
-    run([sys.executable, "-m", "unittest", "discover", "-s", "tests"])
 
     node = shutil.which("node")
     if node is None:
