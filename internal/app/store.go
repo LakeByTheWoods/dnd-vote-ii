@@ -38,7 +38,7 @@ func (s *Store) Close() error {
 }
 
 func (s *Store) initializeSchema(ctx context.Context) error {
-	_, err := s.db.ExecContext(ctx, `
+	if _, err := s.db.ExecContext(ctx, `
 		PRAGMA foreign_keys = ON;
 
 		CREATE TABLE IF NOT EXISTS polls (
@@ -47,9 +47,6 @@ func (s *Store) initializeSchema(ctx context.Context) error {
 			created_at TEXT NOT NULL,
 			management_token TEXT NOT NULL
 		);
-
-		CREATE UNIQUE INDEX IF NOT EXISTS polls_management_token
-		ON polls (management_token);
 
 		CREATE TABLE IF NOT EXISTS poll_dates (
 			id TEXT PRIMARY KEY,
@@ -79,6 +76,85 @@ func (s *Store) initializeSchema(ctx context.Context) error {
 			date_id TEXT NOT NULL REFERENCES poll_dates(id) ON DELETE CASCADE,
 			PRIMARY KEY (vote_id, date_id)
 		);
+	`); err != nil {
+		return err
+	}
+
+	if err := s.ensurePollManagementTokens(ctx); err != nil {
+		return err
+	}
+
+	_, err := s.db.ExecContext(ctx, `
+		CREATE UNIQUE INDEX IF NOT EXISTS polls_management_token
+		ON polls (management_token);
 	`)
 	return err
+}
+
+func (s *Store) ensurePollManagementTokens(ctx context.Context) error {
+	hasTokenColumn, err := s.pollsHasColumn(ctx, "management_token")
+	if err != nil {
+		return err
+	}
+	if !hasTokenColumn {
+		if _, err := s.db.ExecContext(ctx, "ALTER TABLE polls ADD COLUMN management_token TEXT"); err != nil {
+			return err
+		}
+	}
+
+	rows, err := s.db.QueryContext(ctx, "SELECT id FROM polls WHERE management_token IS NULL OR management_token = ''")
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	var pollIDs []string
+	for rows.Next() {
+		var pollID string
+		if err := rows.Scan(&pollID); err != nil {
+			return err
+		}
+		pollIDs = append(pollIDs, pollID)
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+
+	for _, pollID := range pollIDs {
+		token, err := generateManagementToken()
+		if err != nil {
+			return err
+		}
+		if _, err := s.db.ExecContext(ctx, "UPDATE polls SET management_token = ? WHERE id = ?", token, pollID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *Store) pollsHasColumn(ctx context.Context, columnName string) (bool, error) {
+	rows, err := s.db.QueryContext(ctx, "PRAGMA table_info(polls)")
+	if err != nil {
+		return false, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var cid int
+		var name string
+		var columnType string
+		var notNull int
+		var defaultValue any
+		var primaryKey int
+		if err := rows.Scan(&cid, &name, &columnType, &notNull, &defaultValue, &primaryKey); err != nil {
+			return false, err
+		}
+		if name == columnName {
+			return true, nil
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return false, err
+	}
+	return false, nil
 }

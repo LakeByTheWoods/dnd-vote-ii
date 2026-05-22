@@ -133,6 +133,47 @@ func TestOpenStoreCreatesFreshSQLiteSchema(t *testing.T) {
 	}
 }
 
+func TestOpenStoreMigratesPollsMissingManagementToken(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "dnd_vote.db")
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("sql.Open returned error: %v", err)
+	}
+	_, err = db.Exec(`
+		CREATE TABLE polls (
+			id TEXT PRIMARY KEY,
+			title TEXT NOT NULL,
+			created_at TEXT NOT NULL
+		);
+		INSERT INTO polls (id, title, created_at)
+		VALUES ('poll-1', 'Legacy Poll', '2026-05-22T00:00:00Z');
+	`)
+	if err != nil {
+		t.Fatalf("creating legacy schema: %v", err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("closing seed database: %v", err)
+	}
+
+	store, err := OpenStore(context.Background(), dbPath)
+	if err != nil {
+		t.Fatalf("OpenStore returned error for legacy schema: %v", err)
+	}
+	defer store.Close()
+
+	var token string
+	err = store.db.QueryRowContext(
+		context.Background(),
+		"SELECT management_token FROM polls WHERE id = 'poll-1'",
+	).Scan(&token)
+	if err != nil {
+		t.Fatalf("querying migrated management token: %v", err)
+	}
+	if token == "" {
+		t.Fatal("legacy poll management token was not backfilled")
+	}
+}
+
 func TestRouterServesExistingStaticAppShell(t *testing.T) {
 	handler := testRouter(t, 8192)
 
