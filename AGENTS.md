@@ -1,3 +1,7 @@
+## Agent Rules
+
+Always commit your work to git before saying you're done.
+
 ## Agent skills
 
 ### Issue tracker
