@@ -57,6 +57,27 @@ func NewRouter(cfg Config, store *Store) http.Handler {
 				"managementToken": managementToken,
 			})
 		})
+		api.Delete("/polls", func(w http.ResponseWriter, r *http.Request) {
+			err := AuthorizeAdminSecret(cfg, r.Header.Get(AdminSecretHeader))
+			if errors.Is(err, ErrAdminSecretRequired) {
+				writeJSON(w, http.StatusForbidden, map[string]string{"error": "Admin secret is required."})
+				return
+			}
+			if errors.Is(err, ErrAdminSecretInvalid) {
+				writeJSON(w, http.StatusForbidden, map[string]string{"error": "Admin secret is invalid."})
+				return
+			}
+			if err != nil {
+				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Polls could not be cleared."})
+				return
+			}
+
+			if err := store.ClearPolls(r.Context()); err != nil {
+				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Polls could not be cleared."})
+				return
+			}
+			writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+		})
 		api.Post("/polls/{pollID}/votes", func(w http.ResponseWriter, r *http.Request) {
 			payload, ok := readJSONObject(w, r, cfg.MaxRequestBodyBytes)
 			if !ok {
