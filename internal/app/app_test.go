@@ -372,6 +372,22 @@ func TestTallyResultsRankedPairsCases(t *testing.T) {
 		expectedUnavailableBy map[string][]string
 	}{
 		{
+			name: "selects ordinary head to head winner",
+			poll: tallyPollFixture(
+				[]Vote{
+					tallyVoteFixture("Alice", []string{"date-a", "date-b", "date-c"}, nil),
+					tallyVoteFixture("Bob", []string{"date-a", "date-c", "date-b"}, nil),
+					tallyVoteFixture("Cara", []string{"date-b", "date-c", "date-a"}, nil),
+				},
+				nil,
+			),
+			expectedOrder:        []string{"date-a", "date-b", "date-c"},
+			expectedRecords:      []string{"2-0-0", "1-1-0", "0-2-0"},
+			expectedRanks:        []int{1, 2, 3},
+			expectedDisqualified: []bool{false, false, false},
+			expectedWinnerID:     "date-a",
+		},
+		{
 			name: "skips weak cycle closing edge",
 			poll: tallyPollFixture(
 				[]Vote{
