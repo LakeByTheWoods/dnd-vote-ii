@@ -360,6 +360,149 @@ func TestVoteCreationReplacementAndResultsAPIs(t *testing.T) {
 	}
 }
 
+func TestTallyResultsRankedPairsCases(t *testing.T) {
+	tests := []struct {
+		name                  string
+		poll                  Poll
+		expectedOrder         []string
+		expectedRecords       []string
+		expectedRanks         []int
+		expectedDisqualified  []bool
+		expectedWinnerID      string
+		expectedUnavailableBy map[string][]string
+	}{
+		{
+			name: "skips weak cycle closing edge",
+			poll: tallyPollFixture(
+				[]Vote{
+					tallyVoteFixture("Alice", []string{"date-a", "date-b", "date-c"}, nil),
+					tallyVoteFixture("Bob", []string{"date-a", "date-b", "date-c"}, nil),
+					tallyVoteFixture("Cara", []string{"date-a", "date-b", "date-c"}, nil),
+					tallyVoteFixture("Dan", []string{"date-a", "date-b", "date-c"}, nil),
+					tallyVoteFixture("Eli", []string{"date-b", "date-c", "date-a"}, nil),
+					tallyVoteFixture("Fran", []string{"date-b", "date-c", "date-a"}, nil),
+					tallyVoteFixture("Gail", []string{"date-b", "date-c", "date-a"}, nil),
+					tallyVoteFixture("Hank", []string{"date-c", "date-a", "date-b"}, nil),
+					tallyVoteFixture("Ivy", []string{"date-c", "date-a", "date-b"}, nil),
+				},
+				[]string{"2026-06-03", "2026-06-01", "2026-06-02"},
+			),
+			expectedOrder:        []string{"date-a", "date-b", "date-c"},
+			expectedRecords:      []string{"1-1-0", "1-1-0", "1-1-0"},
+			expectedRanks:        []int{1, 2, 3},
+			expectedDisqualified: []bool{false, false, false},
+			expectedWinnerID:     "date-a",
+		},
+		{
+			name: "reports ties and orders by date",
+			poll: tallyPollFixture(
+				[]Vote{
+					tallyVoteFixture("Alice", []string{"date-a", "date-b"}, nil),
+					tallyVoteFixture("Bob", []string{"date-b", "date-a"}, nil),
+				},
+				[]string{"2026-06-02", "2026-06-01"},
+			),
+			expectedOrder:        []string{"date-b", "date-a"},
+			expectedRecords:      []string{"0-0-1", "0-0-1"},
+			expectedRanks:        []int{1, 2},
+			expectedDisqualified: []bool{false, false},
+			expectedWinnerID:     "date-b",
+		},
+		{
+			name: "one eligible date wins without pairwise comparisons",
+			poll: tallyPollFixture(
+				[]Vote{
+					tallyVoteFixture("Alice", []string{"date-a"}, []string{"date-b", "date-c"}),
+					tallyVoteFixture("Bob", []string{"date-a"}, []string{"date-b"}),
+				},
+				nil,
+			),
+			expectedOrder:        []string{"date-a", "date-b", "date-c"},
+			expectedRecords:      []string{"0-0-0", "0-0-0", "0-0-0"},
+			expectedRanks:        []int{1, 0, 0},
+			expectedDisqualified: []bool{false, true, true},
+			expectedWinnerID:     "date-a",
+			expectedUnavailableBy: map[string][]string{
+				"date-b": {"Alice", "Bob"},
+				"date-c": {"Alice"},
+			},
+		},
+		{
+			name: "all disqualified dates have no eligible winner",
+			poll: tallyPollFixture(
+				[]Vote{
+					tallyVoteFixture("Alice", []string{"date-a"}, []string{"date-b"}),
+					tallyVoteFixture("Bob", []string{"date-b"}, []string{"date-a"}),
+				},
+				[]string{"2026-06-02", "2026-06-01"},
+			),
+			expectedOrder:        []string{"date-b", "date-a"},
+			expectedRecords:      []string{"0-0-0", "0-0-0"},
+			expectedRanks:        []int{0, 0},
+			expectedDisqualified: []bool{true, true},
+			expectedWinnerID:     "",
+			expectedUnavailableBy: map[string][]string{
+				"date-a": {"Bob"},
+				"date-b": {"Alice"},
+			},
+		},
+		{
+			name: "unavailable dates are disqualified before head to head tallying",
+			poll: tallyPollFixture(
+				[]Vote{
+					tallyVoteFixture("Alice", []string{"date-a", "date-b"}, []string{"date-c"}),
+					tallyVoteFixture("Bob", []string{"date-b", "date-a"}, nil),
+					tallyVoteFixture("Cara", []string{"date-b", "date-a"}, nil),
+				},
+				nil,
+			),
+			expectedOrder:        []string{"date-b", "date-a", "date-c"},
+			expectedRecords:      []string{"1-0-0", "0-1-0", "0-0-0"},
+			expectedRanks:        []int{1, 2, 0},
+			expectedDisqualified: []bool{false, false, true},
+			expectedWinnerID:     "date-b",
+			expectedUnavailableBy: map[string][]string{
+				"date-c": {"Alice"},
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			talliedDates, winner := TallyResults(test.poll)
+
+			if got := tallyIDs(talliedDates); !equalStrings(got, test.expectedOrder) {
+				t.Fatalf("order = %#v, want %#v", got, test.expectedOrder)
+			}
+			if got := tallyRecords(talliedDates); !equalStrings(got, test.expectedRecords) {
+				t.Fatalf("records = %#v, want %#v", got, test.expectedRecords)
+			}
+			if got := tallyRankValues(talliedDates); !equalInts(got, test.expectedRanks) {
+				t.Fatalf("ranks = %#v, want %#v", got, test.expectedRanks)
+			}
+			if got := tallyDisqualifiedValues(talliedDates); !equalBools(got, test.expectedDisqualified) {
+				t.Fatalf("disqualified = %#v, want %#v", got, test.expectedDisqualified)
+			}
+			if test.expectedWinnerID == "" {
+				if winner != nil {
+					t.Fatalf("winner = %#v, want nil", winner)
+				}
+			} else if winner == nil || winner.ID != test.expectedWinnerID {
+				t.Fatalf("winner = %#v, want %q", winner, test.expectedWinnerID)
+			}
+			for dateID, expectedNames := range test.expectedUnavailableBy {
+				tally := tallyByID(talliedDates, dateID)
+				if tally == nil {
+					t.Fatalf("missing tally for unavailable date %q", dateID)
+				}
+				if !equalStrings(tally.UnavailableBy, expectedNames) {
+					t.Fatalf("%s unavailableBy = %#v, want %#v", dateID, tally.UnavailableBy, expectedNames)
+				}
+			}
+		})
+	}
+}
+
 func TestVoteValidationErrorsArePredictable(t *testing.T) {
 	handler := testRouter(t, 8192)
 	created := createTestPoll(t, handler)
@@ -631,6 +774,89 @@ type voteRankingPayload struct {
 	Position int    `json:"position"`
 }
 
+func tallyPollFixture(votes []Vote, dateValues []string) Poll {
+	if dateValues == nil {
+		dateValues = []string{"2026-06-01", "2026-06-02", "2026-06-03"}
+	}
+
+	dates := make([]PollDate, 0, len(dateValues))
+	for index, value := range dateValues {
+		dateID := fmt.Sprintf("date-%c", 'a'+rune(index))
+		dates = append(dates, PollDate{ID: dateID, Value: value})
+	}
+
+	return Poll{
+		ID:        "poll-1",
+		Title:     "Campaign Night",
+		CreatedAt: "2026-05-19T00:00:00Z",
+		Dates:     dates,
+		Votes:     votes,
+	}
+}
+
+func tallyVoteFixture(voterName string, rankings []string, unavailableDateIDs []string) Vote {
+	voteRankings := make([]VoteRanking, 0, len(rankings))
+	for index, dateID := range rankings {
+		voteRankings = append(voteRankings, VoteRanking{DateID: dateID, Position: index + 1})
+	}
+	if unavailableDateIDs == nil {
+		unavailableDateIDs = []string{}
+	}
+
+	return Vote{
+		ID:                 "vote-" + strings.ToLower(voterName),
+		VoterName:          voterName,
+		CreatedAt:          "2026-05-19T00:00:00Z",
+		Rankings:           voteRankings,
+		UnavailableDateIDs: unavailableDateIDs,
+	}
+}
+
+func tallyIDs(talliedDates []TalliedDate) []string {
+	ids := make([]string, 0, len(talliedDates))
+	for _, tally := range talliedDates {
+		ids = append(ids, tally.ID)
+	}
+	return ids
+}
+
+func tallyRecords(talliedDates []TalliedDate) []string {
+	records := make([]string, 0, len(talliedDates))
+	for _, tally := range talliedDates {
+		records = append(records, tally.Record)
+	}
+	return records
+}
+
+func tallyRankValues(talliedDates []TalliedDate) []int {
+	ranks := make([]int, 0, len(talliedDates))
+	for _, tally := range talliedDates {
+		if tally.Rank == nil {
+			ranks = append(ranks, 0)
+			continue
+		}
+		ranks = append(ranks, *tally.Rank)
+	}
+	return ranks
+}
+
+func tallyDisqualifiedValues(talliedDates []TalliedDate) []bool {
+	values := make([]bool, 0, len(talliedDates))
+	for _, tally := range talliedDates {
+		values = append(values, tally.Disqualified)
+	}
+	return values
+}
+
+func tallyByID(talliedDates []TalliedDate, dateID string) *TalliedDate {
+	for index := range talliedDates {
+		if talliedDates[index].ID == dateID {
+			return &talliedDates[index]
+		}
+	}
+	return nil
+}
+
 type pollSummaryPayload struct {
 	ID        string `json:"id"`
 	Title     string `json:"title"`
@@ -719,6 +945,30 @@ func pollDateValues(dates []datePayload) []string {
 }
 
 func equalStrings(left []string, right []string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for index := range left {
+		if left[index] != right[index] {
+			return false
+		}
+	}
+	return true
+}
+
+func equalInts(left []int, right []int) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for index := range left {
+		if left[index] != right[index] {
+			return false
+		}
+	}
+	return true
+}
+
+func equalBools(left []bool, right []bool) bool {
 	if len(left) != len(right) {
 		return false
 	}
