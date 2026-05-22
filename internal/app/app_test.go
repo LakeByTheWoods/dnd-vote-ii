@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -264,6 +265,233 @@ func TestPollCreationFetchResultsAndListAPIs(t *testing.T) {
 	}
 }
 
+func TestVoteCreationReplacementAndResultsAPIs(t *testing.T) {
+	handler := testRouter(t, 8192)
+	created := createTestPoll(t, handler)
+	first, second, third := created.Poll.Dates[0].ID, created.Poll.Dates[1].ID, created.Poll.Dates[2].ID
+
+	voteResponse := requestJSON(t, handler, http.MethodPost, "/api/polls/"+created.Poll.ID+"/votes", map[string]any{
+		"voterName":          "Alice",
+		"rankings":           []any{first, second},
+		"unavailableDateIds": []any{third},
+	})
+	if voteResponse.Code != http.StatusCreated {
+		t.Fatalf("vote status = %d, want %d; body: %s", voteResponse.Code, http.StatusCreated, voteResponse.Body.String())
+	}
+	var voted struct {
+		Poll pollPayload `json:"poll"`
+	}
+	decodeJSON(t, voteResponse, &voted)
+	if len(voted.Poll.Votes) != 1 {
+		t.Fatalf("votes length = %d, want 1", len(voted.Poll.Votes))
+	}
+	if voted.Poll.Votes[0].VoterName != "Alice" {
+		t.Fatalf("voter name = %q, want Alice", voted.Poll.Votes[0].VoterName)
+	}
+	if got := voted.Poll.Votes[0].RankingDateIDs(); !equalStrings(got, []string{first, second}) {
+		t.Fatalf("rankings = %#v, want %#v", got, []string{first, second})
+	}
+	if got := voted.Poll.Votes[0].UnavailableDateIDs; !equalStrings(got, []string{third}) {
+		t.Fatalf("unavailable = %#v, want %#v", got, []string{third})
+	}
+
+	replacementResponse := requestJSON(t, handler, http.MethodPost, "/api/polls/"+created.Poll.ID+"/votes", map[string]any{
+		"voterName":          " alice ",
+		"rankings":           []any{second, first},
+		"unavailableDateIds": []any{},
+	})
+	if replacementResponse.Code != http.StatusCreated {
+		t.Fatalf("replacement status = %d, want %d; body: %s", replacementResponse.Code, http.StatusCreated, replacementResponse.Body.String())
+	}
+	var replaced struct {
+		Poll pollPayload `json:"poll"`
+	}
+	decodeJSON(t, replacementResponse, &replaced)
+	if len(replaced.Poll.Votes) != 1 {
+		t.Fatalf("replacement votes length = %d, want 1: %#v", len(replaced.Poll.Votes), replaced.Poll.Votes)
+	}
+	replacedVote := replaced.Poll.Votes[0]
+	if replacedVote.ID == voted.Poll.Votes[0].ID {
+		t.Fatalf("replacement kept old vote id %q", replacedVote.ID)
+	}
+	if replacedVote.VoterName != "alice" {
+		t.Fatalf("replacement voter name = %q, want trimmed submitted casing", replacedVote.VoterName)
+	}
+	if got := replacedVote.RankingDateIDs(); !equalStrings(got, []string{second, first}) {
+		t.Fatalf("replacement rankings = %#v, want %#v", got, []string{second, first})
+	}
+	if len(replacedVote.UnavailableDateIDs) != 0 {
+		t.Fatalf("replacement unavailable = %#v, want none", replacedVote.UnavailableDateIDs)
+	}
+
+	fetchResponse := requestJSON(t, handler, http.MethodGet, "/api/polls/"+created.Poll.ID, nil)
+	var fetched struct {
+		Poll pollPayload `json:"poll"`
+	}
+	decodeJSON(t, fetchResponse, &fetched)
+	if len(fetched.Poll.Votes) != 1 || !equalStrings(fetched.Poll.Votes[0].RankingDateIDs(), []string{second, first}) {
+		t.Fatalf("fetched votes did not reflect replacement: %#v", fetched.Poll.Votes)
+	}
+
+	listResponse := requestJSON(t, handler, http.MethodGet, "/api/polls", nil)
+	var listed struct {
+		Polls []pollSummaryPayload `json:"polls"`
+	}
+	decodeJSON(t, listResponse, &listed)
+	if listed.Polls[0].VoteCount != 1 {
+		t.Fatalf("vote count = %d, want one current ballot", listed.Polls[0].VoteCount)
+	}
+
+	resultsResponse := requestJSON(t, handler, http.MethodGet, "/api/polls/"+created.Poll.ID+"/results", nil)
+	if resultsResponse.Code != http.StatusOK {
+		t.Fatalf("results status = %d, want %d; body: %s", resultsResponse.Code, http.StatusOK, resultsResponse.Body.String())
+	}
+	var results struct {
+		Poll         pollPayload          `json:"poll"`
+		TalliedDates []talliedDatePayload `json:"talliedDates"`
+		Winner       talliedDatePayload   `json:"winner"`
+	}
+	decodeJSON(t, resultsResponse, &results)
+	if len(results.Poll.Votes) != 1 {
+		t.Fatalf("results poll votes length = %d, want 1", len(results.Poll.Votes))
+	}
+	if results.Winner.ID != second {
+		t.Fatalf("winner = %q, want %q", results.Winner.ID, second)
+	}
+}
+
+func TestVoteValidationErrorsArePredictable(t *testing.T) {
+	handler := testRouter(t, 8192)
+	created := createTestPoll(t, handler)
+	first, second, third := created.Poll.Dates[0].ID, created.Poll.Dates[1].ID, created.Poll.Dates[2].ID
+
+	tests := []struct {
+		name    string
+		payload map[string]any
+		error   string
+	}{
+		{
+			name: "rankings must be array",
+			payload: map[string]any{
+				"voterName":          "Bob",
+				"rankings":           first,
+				"unavailableDateIds": []any{},
+			},
+			error: "Rankings and unavailableDateIds must be arrays.",
+		},
+		{
+			name: "unavailable must be array",
+			payload: map[string]any{
+				"voterName":          "Bob",
+				"rankings":           []any{first},
+				"unavailableDateIds": second,
+			},
+			error: "Rankings and unavailableDateIds must be arrays.",
+		},
+		{
+			name: "blank voter name",
+			payload: map[string]any{
+				"voterName":          " ",
+				"rankings":           []any{first},
+				"unavailableDateIds": []any{},
+			},
+			error: "Voter name is required.",
+		},
+		{
+			name: "oversized voter name",
+			payload: map[string]any{
+				"voterName":          strings.Repeat("B", 81),
+				"rankings":           []any{first},
+				"unavailableDateIds": []any{},
+			},
+			error: "Voter name must be 80 characters or fewer.",
+		},
+		{
+			name: "duplicate rankings",
+			payload: map[string]any{
+				"voterName":          "Bob",
+				"rankings":           []any{first, first},
+				"unavailableDateIds": []any{},
+			},
+			error: "Ranked dates must be unique.",
+		},
+		{
+			name: "duplicate unavailable dates",
+			payload: map[string]any{
+				"voterName":          "Bob",
+				"rankings":           []any{first},
+				"unavailableDateIds": []any{second, second},
+			},
+			error: "Unavailable dates must be unique.",
+		},
+		{
+			name: "contradictory date",
+			payload: map[string]any{
+				"voterName":          "Bob",
+				"rankings":           []any{second},
+				"unavailableDateIds": []any{second},
+			},
+			error: "A date cannot be both ranked and unavailable.",
+		},
+		{
+			name: "unknown ranked date",
+			payload: map[string]any{
+				"voterName":          "Bob",
+				"rankings":           []any{third, "unknown-date-id"},
+				"unavailableDateIds": []any{},
+			},
+			error: "Rankings include an unknown date.",
+		},
+		{
+			name: "unknown unavailable date",
+			payload: map[string]any{
+				"voterName":          "Bob",
+				"rankings":           []any{first},
+				"unavailableDateIds": []any{"unknown-date-id"},
+			},
+			error: "Unavailable dates include an unknown date.",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			response := requestJSON(t, handler, http.MethodPost, "/api/polls/"+created.Poll.ID+"/votes", test.payload)
+			if response.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want %d; body: %s", response.Code, http.StatusBadRequest, response.Body.String())
+			}
+			var payload map[string]string
+			decodeJSON(t, response, &payload)
+			if payload["error"] != test.error {
+				t.Fatalf("error = %q, want %q", payload["error"], test.error)
+			}
+		})
+	}
+}
+
+func TestVoteRejectsNonStringVoterNames(t *testing.T) {
+	handler := testRouter(t, 8192)
+	created := createTestPoll(t, handler)
+	first := created.Poll.Dates[0].ID
+
+	for _, voterName := range []any{nil, map[string]any{"name": "Bob"}, []any{"Bob"}, true, float64(42)} {
+		t.Run(fmt.Sprintf("%T", voterName), func(t *testing.T) {
+			response := requestJSON(t, handler, http.MethodPost, "/api/polls/"+created.Poll.ID+"/votes", map[string]any{
+				"voterName":          voterName,
+				"rankings":           []any{first},
+				"unavailableDateIds": []any{},
+			})
+			if response.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want %d; body: %s", response.Code, http.StatusBadRequest, response.Body.String())
+			}
+			var payload map[string]string
+			decodeJSON(t, response, &payload)
+			if payload["error"] != "Voter name must be a string." {
+				t.Fatalf("error = %q, want voter-name type error", payload["error"])
+			}
+		})
+	}
+}
+
 func TestCreatePollValidationErrorsArePredictable(t *testing.T) {
 	handler := testRouter(t, 8192)
 	dates := futureDateValues()
@@ -373,7 +601,7 @@ type pollPayload struct {
 	Title           string        `json:"title"`
 	CreatedAt       string        `json:"createdAt"`
 	Dates           []datePayload `json:"dates"`
-	Votes           []any         `json:"votes"`
+	Votes           []votePayload `json:"votes"`
 	ManagementToken string        `json:"managementToken"`
 }
 
@@ -382,12 +610,66 @@ type datePayload struct {
 	Value string `json:"value"`
 }
 
+type votePayload struct {
+	ID                 string               `json:"id"`
+	VoterName          string               `json:"voterName"`
+	CreatedAt          string               `json:"createdAt"`
+	Rankings           []voteRankingPayload `json:"rankings"`
+	UnavailableDateIDs []string             `json:"unavailableDateIds"`
+}
+
+func (v votePayload) RankingDateIDs() []string {
+	dateIDs := make([]string, 0, len(v.Rankings))
+	for _, ranking := range v.Rankings {
+		dateIDs = append(dateIDs, ranking.DateID)
+	}
+	return dateIDs
+}
+
+type voteRankingPayload struct {
+	DateID   string `json:"dateId"`
+	Position int    `json:"position"`
+}
+
 type pollSummaryPayload struct {
 	ID        string `json:"id"`
 	Title     string `json:"title"`
 	CreatedAt string `json:"createdAt"`
 	DateCount int    `json:"dateCount"`
 	VoteCount int    `json:"voteCount"`
+}
+
+type talliedDatePayload struct {
+	ID             string   `json:"id"`
+	Value          string   `json:"value"`
+	PairwiseWins   int      `json:"pairwiseWins"`
+	PairwiseLosses int      `json:"pairwiseLosses"`
+	PairwiseTies   int      `json:"pairwiseTies"`
+	Record         string   `json:"record"`
+	Rank           int      `json:"rank"`
+	UnavailableBy  []string `json:"unavailableBy"`
+	Disqualified   bool     `json:"disqualified"`
+}
+
+type createdPollPayload struct {
+	Poll            pollPayload `json:"poll"`
+	ManagementToken string      `json:"managementToken"`
+}
+
+func createTestPoll(t *testing.T, handler http.Handler) createdPollPayload {
+	t.Helper()
+
+	dates := futureDateValues()
+	response := requestJSON(t, handler, http.MethodPost, "/api/polls", map[string]any{
+		"title": "Waterdeep Campaign Night",
+		"dates": []any{dates[2], dates[0], dates[1]},
+	})
+	if response.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want %d; body: %s", response.Code, http.StatusCreated, response.Body.String())
+	}
+	var created createdPollPayload
+	decodeJSON(t, response, &created)
+	return created
 }
 
 func requestJSON(t *testing.T, handler http.Handler, method string, path string, payload any) *httptest.ResponseRecorder {

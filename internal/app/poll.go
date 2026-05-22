@@ -15,7 +15,10 @@ import (
 	"github.com/google/uuid"
 )
 
-const maxPollTitleLength = 120
+const (
+	maxPollTitleLength = 120
+	maxVoterNameLength = 80
+)
 
 var ErrPollNotFound = errors.New("poll not found")
 
@@ -45,6 +48,12 @@ type VoteRanking struct {
 	Position int    `json:"position"`
 }
 
+type VoteInput struct {
+	VoterName          string
+	Rankings           []string
+	UnavailableDateIDs []string
+}
+
 type PollSummary struct {
 	ID        string `json:"id"`
 	Title     string `json:"title"`
@@ -60,7 +69,7 @@ type TalliedDate struct {
 	PairwiseLosses int      `json:"pairwiseLosses"`
 	PairwiseTies   int      `json:"pairwiseTies"`
 	Record         string   `json:"record"`
-	Rank           int      `json:"rank"`
+	Rank           *int     `json:"rank"`
 	UnavailableBy  []string `json:"unavailableBy"`
 	Disqualified   bool     `json:"disqualified"`
 }
@@ -139,6 +148,111 @@ func (s *Store) FetchPoll(ctx context.Context, pollID string) (Poll, error) {
 		return Poll{}, err
 	}
 	poll.Dates = dates
+	votes, err := s.fetchVotes(ctx, s.db, pollID)
+	if err != nil {
+		return Poll{}, err
+	}
+	poll.Votes = votes
+	return poll, nil
+}
+
+func (s *Store) ReplaceVote(ctx context.Context, pollID string, voteInput VoteInput) (Poll, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return Poll{}, err
+	}
+	defer rollbackUnlessCommitted(tx)
+
+	poll, err := s.fetchPollForUpdate(ctx, tx, pollID)
+	if err != nil {
+		return Poll{}, err
+	}
+	if err := validateVoteAgainstPoll(voteInput, poll); err != nil {
+		return Poll{}, err
+	}
+
+	var existingVoteID string
+	err = tx.QueryRowContext(
+		ctx,
+		"SELECT id FROM votes WHERE poll_id = ? AND voter_name = ? COLLATE NOCASE",
+		pollID,
+		voteInput.VoterName,
+	).Scan(&existingVoteID)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return Poll{}, err
+	}
+	if existingVoteID != "" {
+		if _, err := tx.ExecContext(ctx, "DELETE FROM vote_rankings WHERE vote_id = ?", existingVoteID); err != nil {
+			return Poll{}, err
+		}
+		if _, err := tx.ExecContext(ctx, "DELETE FROM vote_unavailability WHERE vote_id = ?", existingVoteID); err != nil {
+			return Poll{}, err
+		}
+		if _, err := tx.ExecContext(ctx, "DELETE FROM votes WHERE id = ?", existingVoteID); err != nil {
+			return Poll{}, err
+		}
+	}
+
+	voteID := uuid.NewString()
+	createdAt := utcNowISO()
+	if _, err := tx.ExecContext(
+		ctx,
+		"INSERT INTO votes (id, poll_id, voter_name, created_at) VALUES (?, ?, ?, ?)",
+		voteID,
+		pollID,
+		voteInput.VoterName,
+		createdAt,
+	); err != nil {
+		return Poll{}, err
+	}
+	for position, dateID := range voteInput.Rankings {
+		if _, err := tx.ExecContext(
+			ctx,
+			"INSERT INTO vote_rankings (vote_id, date_id, position) VALUES (?, ?, ?)",
+			voteID,
+			dateID,
+			position+1,
+		); err != nil {
+			return Poll{}, err
+		}
+	}
+	for _, dateID := range voteInput.UnavailableDateIDs {
+		if _, err := tx.ExecContext(
+			ctx,
+			"INSERT INTO vote_unavailability (vote_id, date_id) VALUES (?, ?)",
+			voteID,
+			dateID,
+		); err != nil {
+			return Poll{}, err
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return Poll{}, err
+	}
+
+	return s.FetchPoll(ctx, pollID)
+}
+
+func (s *Store) fetchPollForUpdate(ctx context.Context, tx *sql.Tx, pollID string) (Poll, error) {
+	var poll Poll
+	err := tx.QueryRowContext(
+		ctx,
+		"SELECT id, title, created_at FROM polls WHERE id = ?",
+		pollID,
+	).Scan(&poll.ID, &poll.Title, &poll.CreatedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Poll{}, ErrPollNotFound
+	}
+	if err != nil {
+		return Poll{}, err
+	}
+
+	dates, err := fetchPollDates(ctx, tx, pollID)
+	if err != nil {
+		return Poll{}, err
+	}
+	poll.Dates = dates
 	poll.Votes = []Vote{}
 	return poll, nil
 }
@@ -183,7 +297,15 @@ func (s *Store) ListPollSummaries(ctx context.Context) ([]PollSummary, error) {
 }
 
 func (s *Store) fetchPollDates(ctx context.Context, pollID string) ([]PollDate, error) {
-	rows, err := s.db.QueryContext(ctx, `
+	return fetchPollDates(ctx, s.db, pollID)
+}
+
+type queryContext interface {
+	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
+}
+
+func fetchPollDates(ctx context.Context, queryer queryContext, pollID string) ([]PollDate, error) {
+	rows, err := queryer.QueryContext(ctx, `
 		SELECT id, date_value
 		FROM poll_dates
 		WHERE poll_id = ?
@@ -208,6 +330,99 @@ func (s *Store) fetchPollDates(ctx context.Context, pollID string) ([]PollDate, 
 	return dates, nil
 }
 
+func (s *Store) fetchVotes(ctx context.Context, queryer queryContext, pollID string) ([]Vote, error) {
+	rows, err := queryer.QueryContext(ctx, `
+		SELECT id, voter_name, created_at
+		FROM votes
+		WHERE poll_id = ?
+		ORDER BY created_at ASC, voter_name COLLATE NOCASE ASC
+	`, pollID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	votes := []Vote{}
+	for rows.Next() {
+		var vote Vote
+		if err := rows.Scan(&vote.ID, &vote.VoterName, &vote.CreatedAt); err != nil {
+			return nil, err
+		}
+		vote.Rankings = []VoteRanking{}
+		vote.UnavailableDateIDs = []string{}
+		votes = append(votes, vote)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	for index := range votes {
+		rankings, err := s.fetchVoteRankings(ctx, queryer, votes[index].ID)
+		if err != nil {
+			return nil, err
+		}
+		unavailableDateIDs, err := s.fetchVoteUnavailableDateIDs(ctx, queryer, votes[index].ID)
+		if err != nil {
+			return nil, err
+		}
+		votes[index].Rankings = rankings
+		votes[index].UnavailableDateIDs = unavailableDateIDs
+	}
+	return votes, nil
+}
+
+func (s *Store) fetchVoteRankings(ctx context.Context, queryer queryContext, voteID string) ([]VoteRanking, error) {
+	rows, err := queryer.QueryContext(ctx, `
+		SELECT date_id, position
+		FROM vote_rankings
+		WHERE vote_id = ?
+		ORDER BY position ASC
+	`, voteID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	rankings := []VoteRanking{}
+	for rows.Next() {
+		var ranking VoteRanking
+		if err := rows.Scan(&ranking.DateID, &ranking.Position); err != nil {
+			return nil, err
+		}
+		rankings = append(rankings, ranking)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return rankings, nil
+}
+
+func (s *Store) fetchVoteUnavailableDateIDs(ctx context.Context, queryer queryContext, voteID string) ([]string, error) {
+	rows, err := queryer.QueryContext(ctx, `
+		SELECT date_id
+		FROM vote_unavailability
+		WHERE vote_id = ?
+		ORDER BY date_id ASC
+	`, voteID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	dateIDs := []string{}
+	for rows.Next() {
+		var dateID string
+		if err := rows.Scan(&dateID); err != nil {
+			return nil, err
+		}
+		dateIDs = append(dateIDs, dateID)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return dateIDs, nil
+}
+
 func NormalizePollInput(titleValue any, datesValue any) (string, []string, error) {
 	title, ok := titleValue.(string)
 	if !ok {
@@ -230,6 +445,92 @@ func NormalizePollInput(titleValue any, datesValue any) (string, []string, error
 		return "", nil, err
 	}
 	return title, dates, nil
+}
+
+func NormalizeVoteInput(voterNameValue any, rankingsValue any, unavailableValue any) (VoteInput, error) {
+	voterName, ok := voterNameValue.(string)
+	if !ok {
+		return VoteInput{}, validationError("Voter name must be a string.")
+	}
+
+	rankingItems, ok := rankingsValue.([]any)
+	if !ok {
+		return VoteInput{}, validationError("Rankings and unavailableDateIds must be arrays.")
+	}
+	unavailableItems, ok := unavailableValue.([]any)
+	if !ok {
+		return VoteInput{}, validationError("Rankings and unavailableDateIds must be arrays.")
+	}
+
+	voteInput := VoteInput{
+		VoterName:          strings.TrimSpace(voterName),
+		Rankings:           stringifyVoteDateIDs(rankingItems),
+		UnavailableDateIDs: stringifyVoteDateIDs(unavailableItems),
+	}
+	if voteInput.VoterName == "" {
+		return VoteInput{}, validationError("Voter name is required.")
+	}
+	if utf8.RuneCountInString(voteInput.VoterName) > maxVoterNameLength {
+		return VoteInput{}, validationError(fmt.Sprintf("Voter name must be %d characters or fewer.", maxVoterNameLength))
+	}
+	return voteInput, nil
+}
+
+func stringifyVoteDateIDs(items []any) []string {
+	dateIDs := make([]string, 0, len(items))
+	for _, item := range items {
+		dateIDs = append(dateIDs, fmt.Sprint(item))
+	}
+	return dateIDs
+}
+
+func validateVoteAgainstPoll(voteInput VoteInput, poll Poll) error {
+	if len(voteInput.Rankings) == 0 {
+		return validationError("At least one ranked date is required.")
+	}
+	if hasDuplicateStrings(voteInput.Rankings) {
+		return validationError("Ranked dates must be unique.")
+	}
+	if hasDuplicateStrings(voteInput.UnavailableDateIDs) {
+		return validationError("Unavailable dates must be unique.")
+	}
+
+	validDateIDs := map[string]bool{}
+	for _, date := range poll.Dates {
+		validDateIDs[date.ID] = true
+	}
+	for _, dateID := range voteInput.Rankings {
+		if !validDateIDs[dateID] {
+			return validationError("Rankings include an unknown date.")
+		}
+	}
+	for _, dateID := range voteInput.UnavailableDateIDs {
+		if !validDateIDs[dateID] {
+			return validationError("Unavailable dates include an unknown date.")
+		}
+	}
+
+	rankedDateIDs := map[string]bool{}
+	for _, dateID := range voteInput.Rankings {
+		rankedDateIDs[dateID] = true
+	}
+	for _, dateID := range voteInput.UnavailableDateIDs {
+		if rankedDateIDs[dateID] {
+			return validationError("A date cannot be both ranked and unavailable.")
+		}
+	}
+	return nil
+}
+
+func hasDuplicateStrings(values []string) bool {
+	seen := map[string]bool{}
+	for _, value := range values {
+		if seen[value] {
+			return true
+		}
+		seen[value] = true
+	}
+	return false
 }
 
 func normalizePollDates(dateValues []any, now time.Time) ([]string, error) {
@@ -268,26 +569,329 @@ func normalizePollDates(dateValues []any, now time.Time) ([]string, error) {
 }
 
 func TallyNoVoteResults(poll Poll) ([]TalliedDate, *TalliedDate) {
+	return TallyResults(poll)
+}
+
+func TallyResults(poll Poll) ([]TalliedDate, *TalliedDate) {
 	tallies := make([]TalliedDate, 0, len(poll.Dates))
-	for index, date := range poll.Dates {
-		pairwiseTies := max(len(poll.Dates)-1, 0)
+	for _, date := range poll.Dates {
 		tally := TalliedDate{
 			ID:             date.ID,
 			Value:          date.Value,
-			PairwiseTies:   pairwiseTies,
-			Record:         fmt.Sprintf("0-0-%d", pairwiseTies),
-			Rank:           index + 1,
+			Record:         "0-0-0",
+			Rank:           nil,
 			UnavailableBy:  []string{},
 			Disqualified:   false,
 			PairwiseWins:   0,
 			PairwiseLosses: 0,
+			PairwiseTies:   0,
 		}
 		tallies = append(tallies, tally)
 	}
+	byID := map[string]*TalliedDate{}
+	for index := range tallies {
+		byID[tallies[index].ID] = &tallies[index]
+	}
+
+	for _, vote := range poll.Votes {
+		for _, dateID := range vote.UnavailableDateIDs {
+			tally := byID[dateID]
+			if tally == nil {
+				continue
+			}
+			tally.Disqualified = true
+			if !containsString(tally.UnavailableBy, vote.VoterName) {
+				tally.UnavailableBy = append(tally.UnavailableBy, vote.VoterName)
+			}
+		}
+	}
+
+	eligibleIDs := []string{}
+	for _, tally := range tallies {
+		if !tally.Disqualified {
+			eligibleIDs = append(eligibleIDs, tally.ID)
+		}
+	}
+	if len(eligibleIDs) <= 1 {
+		for index := range tallies {
+			if !tallies[index].Disqualified {
+				rank := 1
+				tallies[index].Rank = &rank
+			}
+			tallies[index].Record = fmt.Sprintf("%d-%d-%d", tallies[index].PairwiseWins, tallies[index].PairwiseLosses, tallies[index].PairwiseTies)
+		}
+		sortTallies(tallies)
+		return tallies, firstEligibleTally(tallies)
+	}
+
+	preferenceMatrix := buildPreferenceMatrix(poll.Votes, eligibleIDs)
+	pairResults := buildPairResults(preferenceMatrix, eligibleIDs)
+
+	for _, pair := range pairResults {
+		byID[pair.WinnerID].PairwiseWins++
+		byID[pair.LoserID].PairwiseLosses++
+	}
+
+	for leftIndex, leftID := range eligibleIDs {
+		for _, rightID := range eligibleIDs[leftIndex+1:] {
+			leftVotes := preferenceMatrix[leftID][rightID]
+			rightVotes := preferenceMatrix[rightID][leftID]
+			if leftVotes == rightVotes {
+				byID[leftID].PairwiseTies++
+				byID[rightID].PairwiseTies++
+			}
+		}
+	}
+
+	lockedEdges := buildRankedPairsGraph(pairResults, eligibleIDs)
+	orderedIDs := topologicalOrder(lockedEdges, eligibleIDs, byID)
+	for index, dateID := range orderedIDs {
+		rank := index + 1
+		byID[dateID].Rank = &rank
+	}
+	for index := range tallies {
+		tallies[index].Record = fmt.Sprintf("%d-%d-%d", tallies[index].PairwiseWins, tallies[index].PairwiseLosses, tallies[index].PairwiseTies)
+	}
+
+	sortTallies(tallies)
 	if len(tallies) == 0 {
 		return tallies, nil
 	}
-	return tallies, &tallies[0]
+	return tallies, firstEligibleTally(tallies)
+}
+
+type pairResult struct {
+	WinnerID    string
+	LoserID     string
+	WinnerVotes int
+	LoserVotes  int
+	Margin      int
+}
+
+func buildPreferenceMatrix(votes []Vote, eligibleIDs []string) map[string]map[string]int {
+	matrix := map[string]map[string]int{}
+	for _, leftID := range eligibleIDs {
+		matrix[leftID] = map[string]int{}
+		for _, rightID := range eligibleIDs {
+			if rightID != leftID {
+				matrix[leftID][rightID] = 0
+			}
+		}
+	}
+
+	for _, vote := range votes {
+		unavailableIDs := map[string]bool{}
+		for _, dateID := range vote.UnavailableDateIDs {
+			unavailableIDs[dateID] = true
+		}
+
+		rankingPositions := map[string]int{}
+		for _, ranking := range vote.Rankings {
+			if _, ok := matrix[ranking.DateID]; ok {
+				rankingPositions[ranking.DateID] = ranking.Position
+			}
+		}
+		maxPosition := len(rankingPositions) + 1
+
+		for leftIndex, leftID := range eligibleIDs {
+			if unavailableIDs[leftID] {
+				continue
+			}
+			leftPosition := rankingPositions[leftID]
+			if leftPosition == 0 {
+				leftPosition = maxPosition
+			}
+
+			for _, rightID := range eligibleIDs[leftIndex+1:] {
+				if unavailableIDs[rightID] {
+					continue
+				}
+				rightPosition := rankingPositions[rightID]
+				if rightPosition == 0 {
+					rightPosition = maxPosition
+				}
+
+				if leftPosition < rightPosition {
+					matrix[leftID][rightID]++
+				} else if rightPosition < leftPosition {
+					matrix[rightID][leftID]++
+				}
+			}
+		}
+	}
+	return matrix
+}
+
+func buildPairResults(preferenceMatrix map[string]map[string]int, eligibleIDs []string) []pairResult {
+	pairs := []pairResult{}
+	for leftIndex, leftID := range eligibleIDs {
+		for _, rightID := range eligibleIDs[leftIndex+1:] {
+			leftVotes := preferenceMatrix[leftID][rightID]
+			rightVotes := preferenceMatrix[rightID][leftID]
+			if leftVotes == rightVotes {
+				continue
+			}
+
+			winnerID := leftID
+			loserID := rightID
+			if rightVotes > leftVotes {
+				winnerID = rightID
+				loserID = leftID
+			}
+			winnerVotes := max(leftVotes, rightVotes)
+			loserVotes := min(leftVotes, rightVotes)
+			pairs = append(pairs, pairResult{
+				WinnerID:    winnerID,
+				LoserID:     loserID,
+				WinnerVotes: winnerVotes,
+				LoserVotes:  loserVotes,
+				Margin:      winnerVotes - loserVotes,
+			})
+		}
+	}
+	sort.Slice(pairs, func(left, right int) bool {
+		if pairs[left].Margin != pairs[right].Margin {
+			return pairs[left].Margin > pairs[right].Margin
+		}
+		if pairs[left].WinnerVotes != pairs[right].WinnerVotes {
+			return pairs[left].WinnerVotes > pairs[right].WinnerVotes
+		}
+		if pairs[left].WinnerID != pairs[right].WinnerID {
+			return pairs[left].WinnerID < pairs[right].WinnerID
+		}
+		return pairs[left].LoserID < pairs[right].LoserID
+	})
+	return pairs
+}
+
+func buildRankedPairsGraph(pairResults []pairResult, eligibleIDs []string) map[string]map[string]bool {
+	lockedEdges := map[string]map[string]bool{}
+	for _, dateID := range eligibleIDs {
+		lockedEdges[dateID] = map[string]bool{}
+	}
+	for _, pair := range pairResults {
+		if createsCycle(lockedEdges, pair.WinnerID, pair.LoserID) {
+			continue
+		}
+		lockedEdges[pair.WinnerID][pair.LoserID] = true
+	}
+	return lockedEdges
+}
+
+func createsCycle(lockedEdges map[string]map[string]bool, winnerID string, loserID string) bool {
+	stack := []string{loserID}
+	seen := map[string]bool{}
+	for len(stack) > 0 {
+		current := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		if current == winnerID {
+			return true
+		}
+		if seen[current] {
+			continue
+		}
+		seen[current] = true
+		for next := range lockedEdges[current] {
+			stack = append(stack, next)
+		}
+	}
+	return false
+}
+
+func topologicalOrder(lockedEdges map[string]map[string]bool, eligibleIDs []string, byID map[string]*TalliedDate) []string {
+	incomingCounts := map[string]int{}
+	for _, dateID := range eligibleIDs {
+		incomingCounts[dateID] = 0
+	}
+	for _, losers := range lockedEdges {
+		for loserID := range losers {
+			incomingCounts[loserID]++
+		}
+	}
+
+	ordered := []string{}
+	remaining := map[string]bool{}
+	for _, dateID := range eligibleIDs {
+		remaining[dateID] = true
+	}
+
+	for len(remaining) > 0 {
+		available := []string{}
+		for dateID := range remaining {
+			if incomingCounts[dateID] == 0 {
+				available = append(available, dateID)
+			}
+		}
+		if len(available) == 0 {
+			for dateID := range remaining {
+				available = append(available, dateID)
+			}
+		}
+
+		sort.Slice(available, func(left, right int) bool {
+			leftTally := byID[available[left]]
+			rightTally := byID[available[right]]
+			if leftTally.PairwiseWins != rightTally.PairwiseWins {
+				return leftTally.PairwiseWins > rightTally.PairwiseWins
+			}
+			if leftTally.PairwiseLosses != rightTally.PairwiseLosses {
+				return leftTally.PairwiseLosses < rightTally.PairwiseLosses
+			}
+			return leftTally.Value < rightTally.Value
+		})
+
+		chosenID := available[0]
+		ordered = append(ordered, chosenID)
+		delete(remaining, chosenID)
+		for loserID := range lockedEdges[chosenID] {
+			incomingCounts[loserID]--
+		}
+	}
+	return ordered
+}
+
+func sortTallies(tallies []TalliedDate) {
+	sort.Slice(tallies, func(left, right int) bool {
+		if tallies[left].Disqualified != tallies[right].Disqualified {
+			return !tallies[left].Disqualified
+		}
+		leftRank := 10000
+		if tallies[left].Rank != nil {
+			leftRank = *tallies[left].Rank
+		}
+		rightRank := 10000
+		if tallies[right].Rank != nil {
+			rightRank = *tallies[right].Rank
+		}
+		if leftRank != rightRank {
+			return leftRank < rightRank
+		}
+		if tallies[left].PairwiseWins != tallies[right].PairwiseWins {
+			return tallies[left].PairwiseWins > tallies[right].PairwiseWins
+		}
+		if tallies[left].PairwiseLosses != tallies[right].PairwiseLosses {
+			return tallies[left].PairwiseLosses < tallies[right].PairwiseLosses
+		}
+		return tallies[left].Value < tallies[right].Value
+	})
+}
+
+func firstEligibleTally(tallies []TalliedDate) *TalliedDate {
+	for index := range tallies {
+		if !tallies[index].Disqualified {
+			return &tallies[index]
+		}
+	}
+	return nil
+}
+
+func containsString(values []string, candidate string) bool {
+	for _, value := range values {
+		if value == candidate {
+			return true
+		}
+	}
+	return false
 }
 
 type validationError string
