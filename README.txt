@@ -1,4 +1,4 @@
-DnD Vote is a small web app for choosing a Dungeons and Dragons session date with a friend group. It runs as a Python standard-library web server with static HTML, CSS, and JavaScript pages, and stores poll data in SQLite.
+DnD Vote is a small web app for choosing a Dungeons and Dragons session date with a friend group. It is migrating from a Python standard-library web server to a Go web server with static HTML, CSS, and JavaScript pages, and stores poll data in SQLite.
 
 How the app works:
 
@@ -21,16 +21,16 @@ This means the result is based on pairwise preference strength between eligible 
 
 Local run:
 
-1. Install Python dependencies with `pip install -r requirements.txt` if your environment does not already have them.
-2. Start the server with `python main.py`.
+1. Install Go 1.23 or newer.
+2. Start the Go server with `go run ./cmd/dnd-vote`.
 3. Open `http://localhost:8000`.
-4. Create a poll from the host page and share the generated voter link.
+4. During the migration, the Go server serves the static app shell and initializes SQLite; full poll behavior still lives in the Python server until later migration slices port it.
 
 Local verification:
 
 Run `python scripts\verify.py` before deploying or handing off changes.
 
-The verification command checks Python syntax, runs the Python behavior tests against a temporary SQLite database, and checks JavaScript syntax with `node --check` when Node.js is installed.
+The verification command runs `go test ./...`, checks Python syntax, runs the Python behavior tests against a temporary SQLite database, and checks JavaScript syntax with `node --check` when Node.js is installed.
 
 Data storage:
 
