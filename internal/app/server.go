@@ -173,7 +173,7 @@ func NewRouter(cfg Config, store *Store) http.Handler {
 	})
 
 	// Keep static serving as an explicit allowlist so the Go server only
-	// publishes the existing plain frontend assets during the migration.
+	// publishes the plain frontend assets from the configured static directory.
 	staticFiles := map[string]string{
 		"/":             "index.html",
 		"/index.html":   "index.html",
