@@ -46,8 +46,9 @@ if (command === 'export') {
     let secret;
     try { secret = (await readFile(secretPath, 'utf8')).trim(); }
     catch (error) { if (error.code !== 'ENOENT') throw error; secret = randomBytes(32).toString('base64url'); await writeFile(secretPath, secret, { flag: 'wx', mode: 0o600 }); }
-    await cf('/workers/scripts/session-vote-api/secrets', 'PUT', { name: 'DND_VOTE_ADMIN_SECRET', text: secret, type: 'secret_text' });
     wrangler(['deploy', '--env', '']);
+    // Cloudflare rejects secret edits while an older version is active after rollback.
+    await cf('/workers/scripts/session-vote-api/secrets', 'PUT', { name: 'DND_VOTE_ADMIN_SECRET', text: secret, type: 'secret_text' });
     await waitForHealth();
     const dates = [1, 2, 3].map(n => new Date(Date.now() + n * 86400000).toISOString().slice(0, 10));
     const { poll, managementToken } = await api('/api/polls', 'POST', { title: 'Deployment verification ' + stamp, dates });
