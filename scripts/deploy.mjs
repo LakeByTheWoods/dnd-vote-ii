@@ -47,8 +47,8 @@ if (command === 'export') {
     try { secret = (await readFile(secretPath, 'utf8')).trim(); }
     catch (error) { if (error.code !== 'ENOENT') throw error; secret = randomBytes(32).toString('base64url'); await writeFile(secretPath, secret, { flag: 'wx', mode: 0o600 }); }
     await cf('/workers/scripts/session-vote-api/secrets', 'PUT', { name: 'DND_VOTE_ADMIN_SECRET', text: secret, type: 'secret_text' });
-    wrangler(['deploy']);
-    await api('/api/health');
+    wrangler(['deploy', '--env', '']);
+    await waitForHealth();
     const dates = [1, 2, 3].map(n => new Date(Date.now() + n * 86400000).toISOString().slice(0, 10));
     const { poll, managementToken } = await api('/api/polls', 'POST', { title: 'Deployment verification ' + stamp, dates });
     manifest.testPollIds.push(poll.id); await save();
@@ -56,7 +56,8 @@ if (command === 'export') {
     await api(path + '/votes', 'POST', { voterName: 'Deployment test', rankings: [poll.dates[1].id, poll.dates[0].id], unavailableDateIds: [poll.dates[2].id] });
     const before = await api(path + '/results');
     assert.equal(before.winner.id, poll.dates[1].id);
-    wrangler(['deploy']);
+    wrangler(['deploy', '--env', '']);
+    await waitForHealth();
     assert.deepEqual(await api(path + '/results'), before);
     await api(path + '/votes/' + before.poll.votes[0].id, 'DELETE', undefined, { 'X-DnD-Vote-Management-Token': managementToken });
     assert.equal((await api(path)).poll.votes.length, 0);
@@ -81,6 +82,17 @@ if (command === 'export') {
     manifest.status = 'failed'; await save();
     await rollback(manifest);
     throw error;
+  }
+}
+
+async function waitForHealth() {
+  // Workers routes can briefly serve the prior version after deployment.
+  for (let attempt = 0; attempt < 12; attempt++) {
+    try { assert.deepEqual(await api('/api/health'), { ok: true }); return; }
+    catch (error) {
+      if (attempt === 11) throw error;
+      await new Promise(resolve => setTimeout(resolve, 5000));
+    }
   }
 }
 
