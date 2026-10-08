@@ -1,6 +1,6 @@
 # Session Vote migration
 
-Status: ready-for-agent
+Status: ready-for-human
 
 Deploy the static frontend to https://lakebythewoods.neocities.org/session-vote/.
 Replace Go and SQLite hosting with a TypeScript Worker and Cloudflare D1.
@@ -14,3 +14,8 @@ cleanup, and Git commits. Credentials stay outside the repository under the user
 Acceptance: API and tally tests pass; local and live browser workflows work;
 data survives restarts and redeployment; only the app's Neocities folder changes;
 operations documentation includes deployment, export, and rollback.
+
+## Comments
+
+2026-10-08: Implemented and deployed. The automated suite and live browser checks
+passed. See docs/migration-verification.md for evidence and deployment details.

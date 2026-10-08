@@ -46,8 +46,8 @@ npm run deploy
 ```
 
 The script rejects an uncommitted source tree. It saves existing target files and
-the prior Worker version, applies D1 migrations, installs the admin secret,
-deploys the Worker, tests a poll and ballot, redeploys to check persistence, and
+the prior Worker version, applies D1 migrations, deploys the Worker, installs
+the admin secret, tests a poll and ballot, redeploys to check persistence, and
 deletes only its recorded test poll. It then uploads changed frontend files and
 checks their remote hashes. A manifest records the commit, file hashes, and result.
 Backups and manifests live under `~/.config/session-vote/deployments/`.

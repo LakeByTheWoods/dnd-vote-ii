@@ -11,8 +11,10 @@ export const siteOrigin = 'https://lakebythewoods.neocities.org';
 await mkdir(join(privateDir, 'deployments'), { recursive: true });
 
 export function wrangler(args) {
+  // Export output includes a signed download URL. Keep it out of shared logs.
+  const privateOutput = args[0] === 'd1' && args[1] === 'export';
   const result = spawnSync(process.execPath, ['node_modules/wrangler/bin/wrangler.js', ...args], {
-    stdio: 'inherit', windowsHide: true,
+    stdio: privateOutput ? 'pipe' : 'inherit', windowsHide: true,
     env: { ...process.env, CI: 'true', CLOUDFLARE_ACCOUNT_ID: credentials.CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_API_TOKEN: credentials.CLOUDFLARE_API_TOKEN, WRANGLER_SEND_METRICS: 'false' },
   });
   if (result.status !== 0) throw new Error('Wrangler failed: ' + args.slice(0, 3).join(' '));
