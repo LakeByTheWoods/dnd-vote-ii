@@ -3,13 +3,13 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>D&D Date Vote | Host</title>
+    <title>Session Vote | Host</title>
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
     <div class="page-shell">
       <header class="hero">
-        <h1>Dungeons & Dates</h1>
+        <h1>Session Vote</h1>
         <p class="hero-copy">
           Hosts can pick candidate dates from calendar inputs, save a poll, and
           generate dedicated links for voting and results.
@@ -20,7 +20,7 @@
         <section class="panel">
           <div class="panel-heading">
             <h2>New Poll</h2>
-            <p>Choose a title and add the dates your party could play.</p>
+            <p>Choose a title and add the dates your group could meet.</p>
           </div>
 
           <form id="host-form" class="stack">
@@ -31,7 +31,7 @@
                 name="title"
                 type="text"
                 maxlength="120"
-                placeholder="Curse of Strahd Session"
+                placeholder="Next game session"
                 required
               />
             </label>
@@ -124,6 +124,7 @@
       </main>
     </div>
 
+    <script src="./config.js"></script>
     <script src="./shared.js"></script>
     <script src="./host.js"></script>
   </body>

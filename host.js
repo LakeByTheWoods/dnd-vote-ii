@@ -162,7 +162,7 @@ function clearSelectedDates() {
 }
 
 function loadSampleDates() {
-  hostElements.title.value = "Waterdeep Campaign Night";
+  hostElements.title.value = "Game Session";
   const today = new Date();
   const sampleDates = [7, 9, 11].map((dayOffset) => toDateKey(addDays(today, dayOffset)));
   selectedDates = new Set(sampleDates);

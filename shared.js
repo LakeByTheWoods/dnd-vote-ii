@@ -1,11 +1,11 @@
 (function attachAppApi() {
   async function apiRequest(path, options = {}) {
-    const response = await window.fetch(path, {
+    const response = await window.fetch(`${window.SessionVoteConfig.apiOrigin}${path}`, {
+      ...options,
       headers: {
         "Content-Type": "application/json",
         ...(options.headers ?? {}),
       },
-      ...options,
     });
 
     const data = await response.json().catch(() => ({}));
@@ -86,12 +86,7 @@
   }
 
   function buildPageLink(fileName, pollId) {
-    const url = new URL(window.location.href);
-    if (url.pathname === "/" || url.pathname === "") {
-      url.pathname = `/${fileName}`;
-    } else {
-      url.pathname = url.pathname.replace(/[^/]+$/, fileName);
-    }
+    const url = new URL(fileName, window.location.href);
     url.search = `?poll=${encodeURIComponent(pollId)}`;
     url.hash = "";
     return url.toString();

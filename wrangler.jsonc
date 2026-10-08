@@ -1,0 +1,34 @@
+{
+  "name": "session-vote-api",
+  "main": "worker/index.ts",
+  "compatibility_date": "2026-10-08",
+  "workers_dev": true,
+  "preview_urls": false,
+  "vars": {
+    "ALLOWED_ORIGINS": "https://lakebythewoods.neocities.org"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "session-vote",
+      "database_id": "e7bc8d64-e291-451f-9447-e4a1b0a883a3",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "env": {
+    "local": {
+      "name": "session-vote-local",
+      "vars": {
+        "ALLOWED_ORIGINS": "http://localhost:8000,http://127.0.0.1:8000"
+      },
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "session-vote",
+          "database_id": "e7bc8d64-e291-451f-9447-e4a1b0a883a3",
+          "migrations_dir": "migrations"
+        }
+      ]
+    }
+  }
+}

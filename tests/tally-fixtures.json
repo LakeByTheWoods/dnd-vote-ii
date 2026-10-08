@@ -1,0 +1,600 @@
+[
+  {
+    "disqualified": [
+      false,
+      false,
+      false
+    ],
+    "name": "selects ordinary head to head winner",
+    "order": [
+      "date-a",
+      "date-b",
+      "date-c"
+    ],
+    "poll": {
+      "Dates": [
+        {
+          "ID": "date-a",
+          "Value": "2026-06-01"
+        },
+        {
+          "ID": "date-b",
+          "Value": "2026-06-02"
+        },
+        {
+          "ID": "date-c",
+          "Value": "2026-06-03"
+        }
+      ],
+      "Votes": [
+        {
+          "VoterName": "Alice",
+          "Rankings": [
+            {
+              "DateID": "date-a",
+              "Position": 1
+            },
+            {
+              "DateID": "date-b",
+              "Position": 2
+            },
+            {
+              "DateID": "date-c",
+              "Position": 3
+            }
+          ],
+          "UnavailableDateIDs": []
+        },
+        {
+          "VoterName": "Bob",
+          "Rankings": [
+            {
+              "DateID": "date-a",
+              "Position": 1
+            },
+            {
+              "DateID": "date-c",
+              "Position": 2
+            },
+            {
+              "DateID": "date-b",
+              "Position": 3
+            }
+          ],
+          "UnavailableDateIDs": []
+        },
+        {
+          "VoterName": "Cara",
+          "Rankings": [
+            {
+              "DateID": "date-b",
+              "Position": 1
+            },
+            {
+              "DateID": "date-c",
+              "Position": 2
+            },
+            {
+              "DateID": "date-a",
+              "Position": 3
+            }
+          ],
+          "UnavailableDateIDs": []
+        }
+      ]
+    },
+    "ranks": [
+      1,
+      2,
+      3
+    ],
+    "records": [
+      "2-0-0",
+      "1-1-0",
+      "0-2-0"
+    ],
+    "unavailable": null,
+    "winner": "date-a"
+  },
+  {
+    "disqualified": [
+      false,
+      false,
+      false
+    ],
+    "name": "skips weak cycle closing edge",
+    "order": [
+      "date-a",
+      "date-b",
+      "date-c"
+    ],
+    "poll": {
+      "Dates": [
+        {
+          "ID": "date-a",
+          "Value": "2026-06-03"
+        },
+        {
+          "ID": "date-b",
+          "Value": "2026-06-01"
+        },
+        {
+          "ID": "date-c",
+          "Value": "2026-06-02"
+        }
+      ],
+      "Votes": [
+        {
+          "VoterName": "Alice",
+          "Rankings": [
+            {
+              "DateID": "date-a",
+              "Position": 1
+            },
+            {
+              "DateID": "date-b",
+              "Position": 2
+            },
+            {
+              "DateID": "date-c",
+              "Position": 3
+            }
+          ],
+          "UnavailableDateIDs": []
+        },
+        {
+          "VoterName": "Bob",
+          "Rankings": [
+            {
+              "DateID": "date-a",
+              "Position": 1
+            },
+            {
+              "DateID": "date-b",
+              "Position": 2
+            },
+            {
+              "DateID": "date-c",
+              "Position": 3
+            }
+          ],
+          "UnavailableDateIDs": []
+        },
+        {
+          "VoterName": "Cara",
+          "Rankings": [
+            {
+              "DateID": "date-a",
+              "Position": 1
+            },
+            {
+              "DateID": "date-b",
+              "Position": 2
+            },
+            {
+              "DateID": "date-c",
+              "Position": 3
+            }
+          ],
+          "UnavailableDateIDs": []
+        },
+        {
+          "VoterName": "Dan",
+          "Rankings": [
+            {
+              "DateID": "date-a",
+              "Position": 1
+            },
+            {
+              "DateID": "date-b",
+              "Position": 2
+            },
+            {
+              "DateID": "date-c",
+              "Position": 3
+            }
+          ],
+          "UnavailableDateIDs": []
+        },
+        {
+          "VoterName": "Eli",
+          "Rankings": [
+            {
+              "DateID": "date-b",
+              "Position": 1
+            },
+            {
+              "DateID": "date-c",
+              "Position": 2
+            },
+            {
+              "DateID": "date-a",
+              "Position": 3
+            }
+          ],
+          "UnavailableDateIDs": []
+        },
+        {
+          "VoterName": "Fran",
+          "Rankings": [
+            {
+              "DateID": "date-b",
+              "Position": 1
+            },
+            {
+              "DateID": "date-c",
+              "Position": 2
+            },
+            {
+              "DateID": "date-a",
+              "Position": 3
+            }
+          ],
+          "UnavailableDateIDs": []
+        },
+        {
+          "VoterName": "Gail",
+          "Rankings": [
+            {
+              "DateID": "date-b",
+              "Position": 1
+            },
+            {
+              "DateID": "date-c",
+              "Position": 2
+            },
+            {
+              "DateID": "date-a",
+              "Position": 3
+            }
+          ],
+          "UnavailableDateIDs": []
+        },
+        {
+          "VoterName": "Hank",
+          "Rankings": [
+            {
+              "DateID": "date-c",
+              "Position": 1
+            },
+            {
+              "DateID": "date-a",
+              "Position": 2
+            },
+            {
+              "DateID": "date-b",
+              "Position": 3
+            }
+          ],
+          "UnavailableDateIDs": []
+        },
+        {
+          "VoterName": "Ivy",
+          "Rankings": [
+            {
+              "DateID": "date-c",
+              "Position": 1
+            },
+            {
+              "DateID": "date-a",
+              "Position": 2
+            },
+            {
+              "DateID": "date-b",
+              "Position": 3
+            }
+          ],
+          "UnavailableDateIDs": []
+        }
+      ]
+    },
+    "ranks": [
+      1,
+      2,
+      3
+    ],
+    "records": [
+      "1-1-0",
+      "1-1-0",
+      "1-1-0"
+    ],
+    "unavailable": null,
+    "winner": "date-a"
+  },
+  {
+    "disqualified": [
+      false,
+      false
+    ],
+    "name": "reports ties and orders by date",
+    "order": [
+      "date-b",
+      "date-a"
+    ],
+    "poll": {
+      "Dates": [
+        {
+          "ID": "date-a",
+          "Value": "2026-06-02"
+        },
+        {
+          "ID": "date-b",
+          "Value": "2026-06-01"
+        }
+      ],
+      "Votes": [
+        {
+          "VoterName": "Alice",
+          "Rankings": [
+            {
+              "DateID": "date-a",
+              "Position": 1
+            },
+            {
+              "DateID": "date-b",
+              "Position": 2
+            }
+          ],
+          "UnavailableDateIDs": []
+        },
+        {
+          "VoterName": "Bob",
+          "Rankings": [
+            {
+              "DateID": "date-b",
+              "Position": 1
+            },
+            {
+              "DateID": "date-a",
+              "Position": 2
+            }
+          ],
+          "UnavailableDateIDs": []
+        }
+      ]
+    },
+    "ranks": [
+      1,
+      2
+    ],
+    "records": [
+      "0-0-1",
+      "0-0-1"
+    ],
+    "unavailable": null,
+    "winner": "date-b"
+  },
+  {
+    "disqualified": [
+      false,
+      true,
+      true
+    ],
+    "name": "one eligible date wins without pairwise comparisons",
+    "order": [
+      "date-a",
+      "date-b",
+      "date-c"
+    ],
+    "poll": {
+      "Dates": [
+        {
+          "ID": "date-a",
+          "Value": "2026-06-01"
+        },
+        {
+          "ID": "date-b",
+          "Value": "2026-06-02"
+        },
+        {
+          "ID": "date-c",
+          "Value": "2026-06-03"
+        }
+      ],
+      "Votes": [
+        {
+          "VoterName": "Alice",
+          "Rankings": [
+            {
+              "DateID": "date-a",
+              "Position": 1
+            }
+          ],
+          "UnavailableDateIDs": [
+            "date-b",
+            "date-c"
+          ]
+        },
+        {
+          "VoterName": "Bob",
+          "Rankings": [
+            {
+              "DateID": "date-a",
+              "Position": 1
+            }
+          ],
+          "UnavailableDateIDs": [
+            "date-b"
+          ]
+        }
+      ]
+    },
+    "ranks": [
+      1,
+      0,
+      0
+    ],
+    "records": [
+      "0-0-0",
+      "0-0-0",
+      "0-0-0"
+    ],
+    "unavailable": {
+      "date-b": [
+        "Alice",
+        "Bob"
+      ],
+      "date-c": [
+        "Alice"
+      ]
+    },
+    "winner": "date-a"
+  },
+  {
+    "disqualified": [
+      true,
+      true
+    ],
+    "name": "all disqualified dates have no eligible winner",
+    "order": [
+      "date-b",
+      "date-a"
+    ],
+    "poll": {
+      "Dates": [
+        {
+          "ID": "date-a",
+          "Value": "2026-06-02"
+        },
+        {
+          "ID": "date-b",
+          "Value": "2026-06-01"
+        }
+      ],
+      "Votes": [
+        {
+          "VoterName": "Alice",
+          "Rankings": [
+            {
+              "DateID": "date-a",
+              "Position": 1
+            }
+          ],
+          "UnavailableDateIDs": [
+            "date-b"
+          ]
+        },
+        {
+          "VoterName": "Bob",
+          "Rankings": [
+            {
+              "DateID": "date-b",
+              "Position": 1
+            }
+          ],
+          "UnavailableDateIDs": [
+            "date-a"
+          ]
+        }
+      ]
+    },
+    "ranks": [
+      0,
+      0
+    ],
+    "records": [
+      "0-0-0",
+      "0-0-0"
+    ],
+    "unavailable": {
+      "date-a": [
+        "Bob"
+      ],
+      "date-b": [
+        "Alice"
+      ]
+    },
+    "winner": ""
+  },
+  {
+    "disqualified": [
+      false,
+      false,
+      true
+    ],
+    "name": "unavailable dates are disqualified before head to head tallying",
+    "order": [
+      "date-b",
+      "date-a",
+      "date-c"
+    ],
+    "poll": {
+      "Dates": [
+        {
+          "ID": "date-a",
+          "Value": "2026-06-01"
+        },
+        {
+          "ID": "date-b",
+          "Value": "2026-06-02"
+        },
+        {
+          "ID": "date-c",
+          "Value": "2026-06-03"
+        }
+      ],
+      "Votes": [
+        {
+          "VoterName": "Alice",
+          "Rankings": [
+            {
+              "DateID": "date-a",
+              "Position": 1
+            },
+            {
+              "DateID": "date-b",
+              "Position": 2
+            }
+          ],
+          "UnavailableDateIDs": [
+            "date-c"
+          ]
+        },
+        {
+          "VoterName": "Bob",
+          "Rankings": [
+            {
+              "DateID": "date-b",
+              "Position": 1
+            },
+            {
+              "DateID": "date-a",
+              "Position": 2
+            }
+          ],
+          "UnavailableDateIDs": []
+        },
+        {
+          "VoterName": "Cara",
+          "Rankings": [
+            {
+              "DateID": "date-b",
+              "Position": 1
+            },
+            {
+              "DateID": "date-a",
+              "Position": 2
+            }
+          ],
+          "UnavailableDateIDs": []
+        }
+      ]
+    },
+    "ranks": [
+      1,
+      2,
+      0
+    ],
+    "records": [
+      "1-0-0",
+      "0-1-0",
+      "0-0-0"
+    ],
+    "unavailable": {
+      "date-c": [
+        "Alice"
+      ]
+    },
+    "winner": "date-b"
+  }
+]

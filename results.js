@@ -59,7 +59,7 @@ function renderResultsPage(talliedDates, winner) {
         date.disqualified ? "Disqualified" : "Eligible"
       }</span></td>
       <td>${date.disqualified ? "-" : escapeHtml(date.record)}</td>
-      <td>${escapeHtml(date.unavailableBy.join(", ") || "None")}</td>
+      <td>${escapeHtml((date.unavailableBy ?? []).join(", ") || "None")}</td>
     `;
     resultsElements.tableBody.append(row);
   });

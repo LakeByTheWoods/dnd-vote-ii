@@ -1,2 +1,9 @@
 data/
 __pycache__/
+node_modules/
+.wrangler/
+.dev.vars*
+.env*
+dist/
+.scratch/session-vote/resources.json
+.scratch/session-vote/evidence/
