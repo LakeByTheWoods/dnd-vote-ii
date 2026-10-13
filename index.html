@@ -19,6 +19,23 @@
       <main class="page-grid page-grid-host">
         <section class="panel">
           <div class="panel-heading">
+            <h2>Host Access</h2>
+            <p>Enter the host key to create and manage polls. Friends only need a voting link.</p>
+          </div>
+          <form id="host-access-form" class="stack">
+            <label class="field">
+              <span>Host key</span>
+              <input id="host-key" type="password" autocomplete="off" required />
+            </label>
+            <div class="button-row">
+              <button type="submit" class="primary">Unlock</button>
+              <button id="host-lock" type="button">Lock</button>
+            </div>
+            <p id="host-access-status" role="status">Host access is locked.</p>
+          </form>
+        </section>
+        <section class="panel">
+          <div class="panel-heading">
             <h2>New Poll</h2>
             <p>Choose a title and add the dates your party could play.</p>
           </div>
