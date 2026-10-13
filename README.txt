@@ -87,23 +87,28 @@ network; the built-in HTTP server does not terminate TLS. HOST and PORT can
 also configure the listener. DND_VOTE_DATA_DIR selects the SQLite directory;
 the local default is data/dnd_vote.db.
 
-Railway deployment
-------------------
-1. Push the updated repository to GitHub and deploy it as a Railway service.
-2. Add a volume mounted at /data and set DND_VOTE_DATA_DIR=/data.
-3. Generate a host key locally with Python's secrets.token_urlsafe(32), save it
-   in a password manager, and set DND_VOTE_ADMIN_TOKEN as a service variable.
-   Do not commit it to the repository, image, frontend, railway.toml or .env
-   examples. Do not paste it into issue reports, logs or screenshots.
-4. railway.toml explicitly starts python main.py --host 0.0.0.0; the server
-   uses Railway's PORT. The unauthenticated / health check serves the host page
-   shell but exposes no saved polls or credentials.
-5. Deploy and generate a public HTTPS domain. Open / on that domain and unlock
-   with the host key, create a poll and share only its generated voting/results
-   links. Participants never need the key.
-6. If the key leaks, replace the variable with a new random key and redeploy.
-   All requests with the previous key then fail. Keep database backups private:
-   they include participant information and editing receipt hashes.
+Hosted deployment
+-----------------
+Configure the Python server on the chosen host; no hosting provider is assumed.
+1. Set DND_VOTE_ADMIN_TOKEN through the host's secret/environment configuration.
+   Generate it locally using secrets.token_urlsafe(32), and keep it in a password
+   manager. Do not commit it to source, images, frontend files or .env examples,
+   or paste it into reports, logs or screenshots.
+2. Set DND_VOTE_DATA_DIR to a private, persistent writable directory for SQLite.
+   Keep database backups private: they include participant information and
+   editing receipt hashes.
+3. Set PORT as needed. For a container or proxy requiring external binding,
+   explicitly start python main.py --host 0.0.0.0, or set HOST. Otherwise keep
+   the loopback default and let a local reverse proxy connect to it.
+4. Terminate TLS at the hosting service or reverse proxy. Use the public HTTPS
+   address to unlock the host page, create polls and share only the generated
+   voting/results links. Participants never need the host key.
+5. To revoke a leaked host key, replace DND_VOTE_ADMIN_TOKEN with a new random
+   key and restart the server. Requests using the previous key will then fail.
+
+The unauthenticated / route may serve as a health check: it exposes the host
+page shell, but no saved polls or credentials. Provider-specific deployment
+steps must be adapted to the actual hosting arrangement.
 
 Pages
 -----
@@ -123,7 +128,7 @@ Uses only the Python standard library: a real local threaded HTTP server and
 isolated temporary SQLite databases. Tests cover unauthorised and authorised
 host endpoints, cascades, receipt ownership and replacement, concurrent first
 submissions, public voting/results, disqualification, legacy migration and
-startup configuration. They do not contact a deployed instance. Railway's
-HTTPS proxy, environment variables and volume configuration require deployment
-verification; this suite is not a live security audit. The client check does
+startup configuration. They do not contact a deployed instance. The hosting
+environment's HTTPS proxy, environment variables and persistent storage require
+deployment verification; this suite is not a live security audit. The client check does
 not exercise rendered DOM interactions in a real browser.
