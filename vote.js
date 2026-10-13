@@ -194,7 +194,10 @@ function applyExistingVote(voterName) {
     item.classList.add("ranking-item-unavailable");
   });
 
-  renderVoteStatus("Loaded your existing ballot. Drag items to update it, then submit again.");
+  const canEdit = voteApi.hasHostKey() || voteApi.hasVoteReceipt(votePoll.id, existingVote.voterName);
+  renderVoteStatus(canEdit
+    ? "Loaded your existing ballot. Drag items to update it, then submit again."
+    : "This name already has a ballot. Edit it in the browser used to submit it, or ask the host for help.");
 }
 
 function findVoteByName(voterName) {

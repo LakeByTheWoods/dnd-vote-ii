@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
+import hmac
 import json
 import os
+import secrets
 import sqlite3
 from datetime import datetime, timezone
 from http import HTTPStatus
@@ -15,6 +18,7 @@ from uuid import uuid4
 ROOT = Path(__file__).resolve().parent
 DATA_DIR = Path(os.environ.get("DND_VOTE_DATA_DIR", ROOT / "data")).resolve()
 DB_PATH = DATA_DIR / "dnd_vote.db"
+ADMIN_TOKEN = os.environ.get("DND_VOTE_ADMIN_TOKEN", "")
 STATIC_FILES = {
     "/": ("index.html", "text/html; charset=utf-8"),
     "/index.html": ("index.html", "text/html; charset=utf-8"),
@@ -80,6 +84,11 @@ def initialize_database() -> None:
             );
             """
         )
+        # Existing ballots stay readable, but only the host may change them
+        # until a replacement issues a private editing receipt.
+        columns = {row["name"] for row in connection.execute("PRAGMA table_info(votes)")}
+        if "edit_token_hash" not in columns:
+            connection.execute("ALTER TABLE votes ADD COLUMN edit_token_hash TEXT")
 
 
 def fetch_poll(poll_id: str) -> dict | None:
@@ -209,7 +218,9 @@ def replace_vote(
     voter_name: str,
     rankings: list[str],
     unavailable_date_ids: list[str],
-) -> dict | None:
+    edit_token: str = "",
+    is_host: bool = False,
+) -> tuple[dict, str] | None:
     poll = fetch_poll(poll_id)
     if poll is None:
         return None
@@ -236,16 +247,29 @@ def replace_vote(
     created_at = utc_now_iso()
 
     with get_connection() as connection:
+        # Serialize the ownership check and replacement, including simultaneous
+        # first submissions for the same name.
+        connection.execute("BEGIN IMMEDIATE")
         existing_vote = connection.execute(
-            "SELECT id FROM votes WHERE poll_id = ? AND voter_name = ? COLLATE NOCASE",
+            "SELECT id, edit_token_hash FROM votes WHERE poll_id = ? AND voter_name = ? COLLATE NOCASE",
             (poll_id, clean_name),
         ).fetchone()
         if existing_vote is not None:
+            expected_hash = existing_vote["edit_token_hash"]
+            supplied_hash = hashlib.sha256(edit_token.encode("utf-8")).hexdigest()
+            if not is_host and not (
+                edit_token and expected_hash and hmac.compare_digest(expected_hash, supplied_hash)
+            ):
+                raise PermissionError("This ballot requires its editing receipt or the host key.")
             connection.execute("DELETE FROM votes WHERE id = ?", (existing_vote["id"],))
 
+        # Keep a voter's receipt stable across their edits; host replacements
+        # issue a fresh receipt so legacy/lost receipts can be recovered.
+        vote_token = edit_token if existing_vote is not None and not is_host else secrets.token_urlsafe(32)
+        token_hash = hashlib.sha256(vote_token.encode("utf-8")).hexdigest()
         connection.execute(
-            "INSERT INTO votes (id, poll_id, voter_name, created_at) VALUES (?, ?, ?, ?)",
-            (vote_id, poll_id, clean_name, created_at),
+            "INSERT INTO votes (id, poll_id, voter_name, created_at, edit_token_hash) VALUES (?, ?, ?, ?, ?)",
+            (vote_id, poll_id, clean_name, created_at, token_hash),
         )
         connection.executemany(
             "INSERT INTO vote_rankings (vote_id, date_id, position) VALUES (?, ?, ?)",
@@ -256,7 +280,7 @@ def replace_vote(
             [(vote_id, date_id) for date_id in unavailable_date_ids],
         )
 
-    return fetch_poll(poll_id)
+    return fetch_poll(poll_id), vote_token
 
 
 def delete_vote(poll_id: str, vote_id: str) -> dict | None:
@@ -486,6 +510,18 @@ def topological_order(
 class AppHandler(BaseHTTPRequestHandler):
     server_version = "DnDVoteHTTP/1.0"
 
+    def is_host(self) -> bool:
+        supplied = self.headers.get("Authorization", "")
+        return bool(ADMIN_TOKEN) and hmac.compare_digest(
+            supplied.encode("utf-8"), f"Bearer {ADMIN_TOKEN}".encode("utf-8")
+        )
+
+    def require_host(self) -> bool:
+        if self.is_host():
+            return True
+        self.send_json({"error": "Host authorisation required."}, status=HTTPStatus.UNAUTHORIZED)
+        return False
+
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
 
@@ -508,6 +544,8 @@ class AppHandler(BaseHTTPRequestHandler):
         self.send_response(HTTPStatus.OK)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(content)))
+        self.send_header("Referrer-Policy", "no-referrer")
+        self.send_header("X-Content-Type-Options", "nosniff")
         self.end_headers()
         self.wfile.write(content)
 
@@ -527,6 +565,8 @@ class AppHandler(BaseHTTPRequestHandler):
 
     def handle_api_get(self, path: str) -> None:
         if path == "/api/polls":
+            if not self.require_host():
+                return
             self.send_json({"polls": fetch_poll_summaries()})
             return
 
@@ -552,6 +592,8 @@ class AppHandler(BaseHTTPRequestHandler):
         self.send_json({"error": "Route not found."}, status=HTTPStatus.NOT_FOUND)
 
     def handle_api_post(self, path: str) -> None:
+        if path == "/api/polls" and not self.require_host():
+            return
         try:
             payload = self.read_json()
         except ValueError as error:
@@ -592,26 +634,34 @@ class AppHandler(BaseHTTPRequestHandler):
                 return
 
             try:
-                poll = replace_vote(
+                result = replace_vote(
                     parts[2],
                     str(payload.get("voterName", "")),
                     [str(item) for item in rankings],
                     [str(item) for item in unavailable],
+                    self.headers.get("X-Vote-Token", ""),
+                    self.is_host(),
                 )
+            except PermissionError as error:
+                self.send_json({"error": str(error)}, status=HTTPStatus.FORBIDDEN)
+                return
             except ValueError as error:
                 self.send_json({"error": str(error)}, status=HTTPStatus.BAD_REQUEST)
                 return
 
-            if poll is None:
+            if result is None:
                 self.send_json({"error": "Poll not found."}, status=HTTPStatus.NOT_FOUND)
                 return
 
-            self.send_json({"poll": poll}, status=HTTPStatus.CREATED)
+            poll, vote_token = result
+            self.send_json({"poll": poll, "voteToken": vote_token}, status=HTTPStatus.CREATED)
             return
 
         self.send_json({"error": "Route not found."}, status=HTTPStatus.NOT_FOUND)
 
     def handle_api_delete(self, path: str) -> None:
+        if not self.require_host():
+            return
         if path == "/api/polls":
             with get_connection() as connection:
                 connection.execute("DELETE FROM polls")
@@ -652,6 +702,9 @@ class AppHandler(BaseHTTPRequestHandler):
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(content)))
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Referrer-Policy", "no-referrer")
+        self.send_header("X-Content-Type-Options", "nosniff")
         self.end_headers()
         self.wfile.write(content)
 
@@ -663,7 +716,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Run the D&D date voting app.")
     parser.add_argument(
         "--host",
-        default=os.environ.get("HOST", "0.0.0.0"),
+        default=os.environ.get("HOST", "127.0.0.1"),
         help="Host interface to bind.",
     )
     parser.add_argument(
@@ -673,6 +726,9 @@ def main() -> None:
         help="Port to serve on.",
     )
     args = parser.parse_args()
+
+    if len(ADMIN_TOKEN) < 32 or not ADMIN_TOKEN.isascii() or any(char.isspace() for char in ADMIN_TOKEN):
+        parser.error("Set DND_VOTE_ADMIN_TOKEN to a random secret of at least 32 ASCII characters without whitespace.")
 
     initialize_database()
     server = ThreadingHTTPServer((args.host, args.port), AppHandler)
