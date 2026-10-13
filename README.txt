@@ -2,7 +2,6 @@ This project is a web app to help a friend group vote for and decide on a date f
 The app is allows a Host to create a new poll of potential dates.
 Voters will then vote on those dates with preferential voting.
 Voters may mark dates as being unavailable, if any Voter does this for a date, then that date will be disqualified.
-Votes should be counted with a geometric scoring system, if a vote is someone's first preference, then that is 1 point, second preference should be 2/3rds a point, third preference should be 2/3rds of that etc.
 
 This repository now includes a real cross-device version of the app backed by SQLite.
 
@@ -28,4 +27,4 @@ Notes:
 - Polls and votes are stored in `data/dnd_vote.db`
 - On Railway, the SQLite file should live on the mounted volume via `DND_VOTE_DATA_DIR=/data`
 - Votes from the same voter name replace that voter's previous ballot for the same poll
-- Any date marked unavailable by any voter is disqualified from scoring
+- Any date marked unavailable by any voter is disqualified from the results
