@@ -113,7 +113,12 @@ function renderResultsPage(talliedDates, winner) {
       void handleDeleteVote(vote);
     });
 
-    actions.append(editLink, deleteButton);
+    if (resultsApi.hasHostKey() || resultsApi.hasVoteReceipt(resultsPoll.id, vote.voterName)) {
+      actions.append(editLink);
+    }
+    if (resultsApi.hasHostKey()) {
+      actions.append(deleteButton);
+    }
     item.append(info, actions);
     resultsElements.votesList.append(item);
   });

@@ -29,6 +29,29 @@ let visibleMonthStart = startOfMonth(new Date());
 void initializeHostPage();
 
 async function initializeHostPage() {
+  const accessStatus = document.querySelector("#host-access-status");
+  accessStatus.textContent = hostApi.hasHostKey() ? "Host access is unlocked in this tab." : "Host access is locked.";
+  document.querySelector("#host-access-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const input = document.querySelector("#host-key");
+    hostApi.setHostKey(input.value.trim());
+    input.value = "";
+    try {
+      await hostApi.getAllPolls();
+      accessStatus.textContent = "Host access is unlocked in this tab. Lock it when finished.";
+    } catch (error) {
+      hostApi.setHostKey("");
+      accessStatus.textContent = error.message;
+    }
+    await renderSavedPolls();
+  });
+  document.querySelector("#host-lock").addEventListener("click", () => {
+    hostApi.setHostKey("");
+    accessStatus.textContent = "Host access is locked.";
+    activePoll = null;
+    renderShareCard();
+    void renderSavedPolls();
+  });
   hostElements.prevMonths.addEventListener("click", () => {
     visibleMonthStart = addMonths(visibleMonthStart, -MONTHS_PER_VIEW);
     renderCalendars();
@@ -236,6 +259,10 @@ function renderShareCard() {
 
 async function renderSavedPolls() {
   hostElements.pollList.innerHTML = "";
+  if (!hostApi.hasHostKey()) {
+    hostElements.pollList.textContent = "Unlock host access to view saved polls.";
+    return;
+  }
 
   let polls;
   try {
