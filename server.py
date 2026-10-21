@@ -732,7 +732,7 @@ def main() -> None:
 
     initialize_database()
     server = ThreadingHTTPServer((args.host, args.port), AppHandler)
-    print(f"Serving D&D vote app on http://{args.host}:{args.port}")
+    print(f"Serving D&D vote app on http://{args.host}:{server.server_address[1]}")
     server.serve_forever()
 
 

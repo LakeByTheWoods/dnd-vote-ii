@@ -15,8 +15,13 @@
     return key ? { Authorization: `Bearer ${key}` } : {};
   }
 
+  function normalizeVoterName(voterName) {
+    // Match SQLite's built-in NOCASE collation, which folds ASCII only.
+    return voterName.trim().replace(/[A-Z]/g, letter => letter.toLowerCase());
+  }
+
   function receiptKey(pollId, voterName) {
-    return `dnd-vote-receipt:${pollId}:${voterName.trim().toLowerCase()}`;
+    return `dnd-vote-receipt:${pollId}:${normalizeVoterName(voterName)}`;
   }
 
   function hasVoteReceipt(pollId, voterName) {
@@ -117,6 +122,7 @@
     setHostKey,
     hasHostKey,
     hasVoteReceipt,
+    normalizeVoterName,
     apiRequest,
     clearPolls,
     createPoll,

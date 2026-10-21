@@ -78,6 +78,14 @@ test('host headers, private receipts, public links and editing work over HTTP', 
     const results = await outsider.api.getResults(poll.id);
     assert.equal(results.poll.votes.length, 1);
     assert.equal(JSON.stringify(results).includes(receipt), false);
+    // SQLite NOCASE folds ASCII only. Distinct accented names must not share
+    // a browser receipt slot or make one another's ballots uneditable.
+    const upperName = { ...ballot, voterName: 'Älice' };
+    const lowerName = { ...ballot, voterName: 'älice' };
+    await voter.api.saveVote(poll.id, upperName);
+    await voter.api.saveVote(poll.id, lowerName);
+    await voter.api.saveVote(poll.id, upperName);
+    await voter.api.saveVote(poll.id, lowerName);
     // Public reads do not carry the host key, even in the host's tab.
     await host.api.getPoll(poll.id);
     assert.equal(host.requests.at(-1).options.headers.Authorization, undefined);

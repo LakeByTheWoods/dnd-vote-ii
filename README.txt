@@ -59,6 +59,11 @@ from submission and send it as X-Vote-Token on another device; treat it as a
 secret and never put it in a URL. A host replacement issues a fresh receipt and
 revokes the previous one. Normal participant edits preserve their receipt.
 
+Name matching follows SQLite NOCASE: ASCII letters are case-insensitive, while
+accented uppercase/lowercase names are distinct ballots. Browser receipt keys
+use the same rule. If you used an earlier build with an accented uppercase
+name, its old browser receipt key may need host-assisted recovery as above.
+
 Existing databases are automatically migrated without changing votes or
 results. Older ballots have no receipt and can only be changed by the host.
 For a voter to resume editing, the simplest recovery is host deletion followed
@@ -119,6 +124,8 @@ Pages
 Verification
 ------------
 Run: python -m unittest discover -s tests -v
+GitHub Actions also runs this suite and the client/syntax checks on pull
+requests and pushes to master or the access-control branch.
 Optional client integration check (Node.js 18 or newer):
    node --test tests/test_client.cjs
 It runs shared.js in isolated browser-like storage contexts against a real
@@ -128,7 +135,11 @@ Uses only the Python standard library: a real local threaded HTTP server and
 isolated temporary SQLite databases. Tests cover unauthorised and authorised
 host endpoints, cascades, receipt ownership and replacement, concurrent first
 submissions, public voting/results, disqualification, legacy migration and
-startup configuration. They do not contact a deployed instance. The hosting
-environment's HTTPS proxy, environment variables and persistent storage require
+startup configuration. They do not contact a deployed instance.
+Startup tests launch main.py with explicit environment and CLI listener settings,
+and verify a private data directory, ballot/receipt persistence over restart,
+and host-key rotation. These checks cannot establish that a provider actually
+mounts durable storage or routes HTTPS traffic to the configured listener.
+The hosting environment's HTTPS proxy, environment variables and persistent storage require
 deployment verification; this suite is not a live security audit. The client check does
 not exercise rendered DOM interactions in a real browser.

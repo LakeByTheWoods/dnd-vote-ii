@@ -201,9 +201,9 @@ function applyExistingVote(voterName) {
 }
 
 function findVoteByName(voterName) {
-  const normalizedName = voterName.trim().toLowerCase();
+  const normalizedName = voteApi.normalizeVoterName(voterName);
   return (
-    votePoll.votes.find((vote) => vote.voterName.trim().toLowerCase() === normalizedName) ?? null
+    votePoll.votes.find((vote) => voteApi.normalizeVoterName(vote.voterName) === normalizedName) ?? null
   );
 }
 
